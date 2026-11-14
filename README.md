@@ -45,6 +45,20 @@ lalu buka http://localhost:8771 (atau klik dua kali `index.html`).
 - **Dibayar** = nilai yang sudah dibayar (untuk Non-PO otomatis = nilai).
 - Transaksi bertanda **Batal** tidak dihitung.
 
+## Integrasi Amprah (kas kecil)
+**Data & Backup → Integrasi Amprah**: tempel link Google Sheet "Tracking Pengeluaran Amprah" (dibagikan
+"Siapa saja yang memiliki link: Pelihat"). Sheet **hanya dibaca** langsung dari browser (ekspor .xlsx), dimuat ulang
+tiap ±4 menit saat aplikasi terbuka; salinan terakhir dipakai saat offline.
+- Dibaca hanya kolom NO, TANGGAL, ITEM, JENIS AMPRAH, PIC, NOTA, TOTAL PENGELUARAN, REMARKS.
+  Kolom nomor rekening, nama pemilik rekening, bank, dan bukti transfer **tidak dibaca**.
+- Setiap baris menjadi transaksi Non-PO **"Amprah (kas kecil)"**, dialokasikan ke item budget memakai **aturan**
+  (jenis amprah + kata kunci → item; aturan pertama yang cocok). Aturan bawaan mencari item lewat uraian di RAB,
+  jadi ikut menyesuaikan RAB revisi. Ubah di *Aturan pemetaan…* (Admin).
+- Baris yang perlu dipilih manual (mis. "Penggantian Nota") atau salah alokasi: klik transaksinya →
+  koreksi alokasi/rincian harga → *Simpan koreksi*. Koreksi disimpan per baris (kunci: tanggal + item + nilai);
+  bila tanggal/item/nilai di sheet Amprah diubah, baris itu kembali memakai aturan.
+- Status nota (DONE / MASIH DI PIC / TIDAK ADA NOTA) tampil per transaksi; dashboard merangkum nilai yang notanya belum lengkap.
+
 ## Pasang di laptop sebagai aplikasi (PWA)
 Buka situs di **Chrome/Edge** → tombol **⤓ Pasang aplikasi** di kanan atas (atau ikon ⊕ di kolom alamat).
 Aplikasi mendapat ikon di Start Menu/desktop/taskbar, terbuka di jendela sendiri, dan tetap bisa dibuka saat offline.
