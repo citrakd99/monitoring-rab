@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoring RAB</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div>
+      <div class="eyebrow">Monitoring Budget vs Realisasi</div>
+      <h1 id="projName">Monitoring RAB</h1>
+      <div class="sub" id="projSub">Impor file RAB (.xlsx) untuk mulai</div>
+    </div>
+    <div class="bar" style="margin:0">
+      <button class="badge" id="syncBadge" title="Status penyimpanan">Lokal</button>
+      <button class="btn pri w" id="btnNewTx">+ Transaksi</button>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="dash" class="on">Dashboard</button>
+    <button data-tab="budget">Budget RAB</button>
+    <button data-tab="ahs">Analisa Harga</button>
+    <button data-tab="pkg">Paket Pekerjaan<span class="cnt" id="cntPkg"></span></button>
+    <button data-tab="tx">Transaksi<span class="cnt" id="cntTx"></span></button>
+    <button data-tab="data">Data &amp; Backup</button>
+  </nav>
+</header>
+
+<main>
+  <section class="tab on" id="tab-dash"></section>
+  <section class="tab" id="tab-budget"></section>
+  <section class="tab" id="tab-ahs"></section>
+  <section class="tab" id="tab-pkg"></section>
+  <section class="tab" id="tab-tx"></section>
+  <section class="tab" id="tab-data"></section>
+</main>
+
+<div id="modalRoot"></div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="js/parse-rab.js"></script>
+<script src="js/store.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

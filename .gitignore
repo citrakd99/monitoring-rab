@@ -1,0 +1,16 @@
+# Hanya aplikasi (webapp/) dan backend/ yang masuk repo. File proyek asli (Excel RAB, backup .json) tidak pernah diunggah.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/deploy.sh
+!/webapp/
+!/backend/
+.claude/
+_test/
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.json.bak
+backup-*.json
