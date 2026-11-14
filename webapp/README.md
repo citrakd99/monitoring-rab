@@ -45,6 +45,16 @@ lalu buka http://localhost:8771 (atau klik dua kali `index.html`).
 - **Dibayar** = nilai yang sudah dibayar (untuk Non-PO otomatis = nilai).
 - Transaksi bertanda **Batal** tidak dihitung.
 
+## Pasang di laptop sebagai aplikasi (PWA)
+Buka situs di **Chrome/Edge** → tombol **⤓ Pasang aplikasi** di kanan atas (atau ikon ⊕ di kolom alamat).
+Aplikasi mendapat ikon di Start Menu/desktop/taskbar, terbuka di jendela sendiri, dan tetap bisa dibuka saat offline.
+Klik kanan ikon di taskbar untuk pintasan **+ Transaksi**, Dashboard, Analisa Harga (`?go=newTx|dash|ahs`).
+Safari Mac: *File → Add to Dock*. Detail per browser ada di tab **Data & Backup**.
+
+- `sw.js` menyimpan **hanya berkas aplikasi** (network-first: selalu versi terbaru saat online, cache saat offline).
+  Data server tidak pernah di-cache oleh service worker. Naikkan `VERSION` di `sw.js` bila daftar `SHELL` berubah.
+- Ikon: `icons/` (192, 512, maskable 512, apple-touch, favicon).
+
 ## Penyimpanan data
 - **Mode server (disarankan)**: RAB, transaksi, paket, dan rincian harga disimpan di **Google Sheet database**
   terpisah lewat Apps Script — dipakai bersama tim tanpa impor, dengan kode akses Admin / Input / Lihat.

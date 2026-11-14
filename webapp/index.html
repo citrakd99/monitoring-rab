@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Monitoring RAB</title>
+<meta name="description" content="Budget vs realisasi, paket pekerjaan, dan analisa harga satuan proyek">
+<meta name="theme-color" content="#2a78d6">
+<meta name="application-name" content="Monitoring RAB">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Monitoring RAB">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -15,6 +24,7 @@
       <div class="sub" id="projSub">Impor file RAB (.xlsx) untuk mulai</div>
     </div>
     <div class="bar" style="margin:0">
+      <button class="btn" id="btnInstall" type="button" hidden title="Pasang sebagai aplikasi di laptop">⤓ Pasang aplikasi</button>
       <button class="badge" id="syncBadge" title="Status penyimpanan">Lokal</button>
       <button class="btn pri w" id="btnNewTx">+ Transaksi</button>
     </div>

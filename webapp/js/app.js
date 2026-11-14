@@ -491,6 +491,7 @@
       '<div class="list-row"><span>' + (Sync.enabled() ? 'Hapus salinan di browser ini & unduh ulang dari server' : 'Hapus semua data di browser ini') + '</span><button class="btn danger" data-act="reset">' + (Sync.enabled() ? 'Unduh ulang' : 'Hapus') + '</button></div>' +
       (S.data.savedAt ? '<p class="small muted" style="margin-top:8px">Disimpan terakhir ' + new Date(S.data.savedAt).toLocaleString('id-ID') + '</p>' : '') +
       '</div></div>';
+    h += installCard();
     $('#tab-data').innerHTML = h;
     var drop = $('#drop');
     $('#fRab').addEventListener('change', function (e) { if (e.target.files[0]) importRab(e.target.files[0]); });
@@ -604,6 +605,26 @@
       Sync.start();
       return afterConnect(prevLocal);
     }).then(function () { render(); toast('Tersambung ke server sebagai ' + Sync.role); });
+  }
+  var installEvt = null;
+  function isStandalone() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+  function doInstall() {
+    if (!installEvt) { go('data'); return; }
+    installEvt.prompt();
+    installEvt.userChoice.then(function (c) { if (c && c.outcome === 'accepted') { installEvt = null; $('#btnInstall').hidden = true; } }, function () { /* abaikan */ });
+  }
+  function installCard() {
+    var st;
+    if (isStandalone()) st = '<span class="pill ok">Sedang berjalan sebagai aplikasi</span>';
+    else if (installEvt) st = '<button class="btn pri" data-act="install">⤓ Pasang aplikasi</button>';
+    else st = '<span class="pill">Pasang lewat menu browser</span>';
+    return '<div class="card" style="margin-top:12px"><div class="hd"><h2>Pasang di laptop sebagai aplikasi</h2>' + st + '</div>' +
+      '<p class="small ink2" style="margin-bottom:8px">Aplikasi bisa dipasang seperti program biasa: punya ikon di Start Menu / desktop / taskbar, terbuka di jendela sendiri, ' +
+      'dan tetap bisa dibuka saat offline (transaksi masuk antrean dan terkirim saat online). Pembaruan terpasang otomatis setiap dibuka saat online.</p>' +
+      '<div class="list-row"><span><b>Chrome / Edge</b> (Windows, Mac, Linux)</span><span class="small ink2" style="text-align:right">tombol <b>⤓ Pasang aplikasi</b> di atas, atau ikon ⊕ di ujung kanan kolom alamat, atau menu ⋮ → <i>Cast, save &amp; share</i> → <i>Install page as app</i> (Edge: ⋯ → <i>Apps</i> → <i>Install this site as an app</i>)</span></div>' +
+      '<div class="list-row"><span><b>Safari</b> (Mac)</span><span class="small ink2" style="text-align:right">menu <i>File</i> → <i>Add to Dock</i></span></div>' +
+      '<div class="list-row"><span><b>HP Android / iPhone</b></span><span class="small ink2" style="text-align:right">Chrome: ⋮ → <i>Add to Home screen</i> · Safari: Bagikan → <i>Add to Home Screen</i></span></div>' +
+      '<p class="small muted" style="margin-top:8px">Klik kanan ikon aplikasi di taskbar untuk pintasan: <b>+ Transaksi</b>, Dashboard, Analisa Harga. Menghapus: buka aplikasi → menu ⋯ → <i>Uninstall</i>. Data di Google Sheet tidak ikut terhapus.</p></div>';
   }
   function setImp(html) { ui.impMsg = html; var el = $('#impMsg'); if (el) el.innerHTML = html; }
   function download(name, blob) {
@@ -1032,6 +1053,7 @@
       case 'newPkg': pkgForm(); break;
       case 'editPkg': { var p = S.data.pkgs.find(function (x) { return x.id === id; }); if (p) pkgForm(p); break; }
       case 'pkgDetail': pkgDetail(id); break;
+      case 'install': doInstall(); break;
       case 'hs': harsatDetail(id); break;
       case 'blk': blockDetail(id); break;
       case 'goHarga': ui.h.view = 'dasar'; ui.h.f = 'act'; ui.h.sort = 'imp'; go('ahs'); break;
@@ -1108,4 +1130,25 @@
     Sync.start();
     Sync.load();
   }
+
+  /* ---------- pasang sebagai aplikasi (PWA) ---------- */
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () { /* abaikan */ }); });
+  }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEvt = e; $('#btnInstall').hidden = false; if (ui.tab === 'data') renderDataSafe(); });
+  window.addEventListener('appinstalled', function () { installEvt = null; $('#btnInstall').hidden = true; toast('Aplikasi terpasang — buka dari Start Menu / desktop'); if (ui.tab === 'data') renderDataSafe(); });
+  $('#btnInstall').addEventListener('click', doInstall);
+  if (isStandalone()) document.body.classList.add('standalone');
+
+  /* pintasan dari ikon aplikasi (klik kanan di taskbar): ?go=newTx | dash | ahs */
+  (function () {
+    var m = location.search.match(/[?&]go=([a-zA-Z]+)/);
+    if (location.search) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* abaikan */ } }
+    if (!m) return;
+    var go_ = m[1];
+    if (go_ === 'newTx') {
+      var tries = 0;
+      (function wait() { if (S.rab && !$('#modalRoot').innerHTML) txForm(); else if (++tries < 40) setTimeout(wait, 250); })();
+    } else if (['dash', 'budget', 'ahs', 'pkg', 'tx', 'data'].indexOf(go_) >= 0) go(go_);
+  })();
 })();
