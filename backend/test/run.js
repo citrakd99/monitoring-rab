@@ -63,13 +63,13 @@ test('login: peran dikenali, kode salah ditolak, dikunci setelah 10x salah', () 
 test('request rusak / aksi asing / izin peran', () => {
   assert.strictEqual(JSON.parse(sim.raw('{x')).error.code, 'BAD_REQUEST');
   err(adm('hapusSemua'), 'UNKNOWN_ACTION', 'asing');
-  ['saveTx', 'deleteTx', 'savePkg', 'deletePkg', 'publishRab', 'importData', 'getLog'].forEach(a => err(lht(a, {}), 'FORBIDDEN', 'view ' + a));
-  ['publishRab', 'importData', 'getLog'].forEach(a => err(inp(a, {}), 'FORBIDDEN', 'input ' + a));
+  ['saveTx', 'deleteTx', 'savePkg', 'deletePkg', 'publishRab', 'importData', 'getLog', 'saveSetting', 'saveAmprahOvr'].forEach(a => err(lht(a, {}), 'FORBIDDEN', 'view ' + a));
+  ['publishRab', 'importData', 'getLog', 'saveSetting'].forEach(a => err(inp(a, {}), 'FORBIDDEN', 'input ' + a));
 });
 
 test('load sebelum RAB terbit: rab null, data kosong', () => {
   const d = ok(lht('load'));
-  assert.strictEqual(d.rab, null); assert.deepStrictEqual(d.data, { tx: [], pkgs: [] });
+  assert.strictEqual(d.rab, null); assert.deepStrictEqual(d.data, { tx: [], pkgs: [], set: {}, amOvr: {} });
 });
 
 let rabVer;
@@ -172,9 +172,56 @@ test('importData merge per id (tidak menghapus data server lain); replace mengga
   assert.strictEqual(d.tx.length, 1); assert.strictEqual(d.pkgs.length, 0);
 });
 
+test('Amprah: tab baru dibuat otomatis (database lama tanpa setup ulang)', () => {
+  delete sheets.Setting; delete sheets.Amprah_Koreksi;
+  const d = ok(lht('load')).data;
+  assert.deepStrictEqual(d.set, {}); assert.deepStrictEqual(d.amOvr, {});
+  assert.ok(sheets.Setting && sheets.Amprah_Koreksi, 'tab dibuat saat dibaca');
+});
+
+const RULES = [{ jenis: 'KONTRAKAN', kata: 'cewe|putri', t: 'L:B3-10' }, { jenis: '', kata: '- penggantian', t: '' }];
+test('saveSetting: link & aturan tersimpan sebagai JSON; kunci asing ditolak; hanya admin', () => {
+  ok(adm('saveSetting', { key: 'amprahSrc', value: { id: '1AbC-xyz_123', sheet: 'TRACKING' } }));
+  ok(adm('saveSetting', { key: 'amprahRules', value: RULES }));
+  ok(adm('saveSetting', { key: 'amprahRules', value: RULES })); // update, bukan baris baru
+  const d = ok(lht('load')).data;
+  assert.deepStrictEqual(d.set.amprahRules, RULES);
+  assert.deepStrictEqual(d.set.amprahSrc, { id: '1AbC-xyz_123', sheet: 'TRACKING' });
+  assert.strictEqual(sheets.Setting.rows.filter(r => r && r[0] === 'amprahRules').length, 1);
+  err(adm('saveSetting', { key: 'rahasia', value: 1 }), 'VALIDATION', 'kunci asing');
+  err(inp('saveSetting', { key: 'amprahRules', value: [] }), 'FORBIDDEN', 'input');
+});
+
+test('saveAmprahOvr: simpan, ubah, hapus koreksi; validasi target', () => {
+  const key = 'A-20261103-1x9k2m7';
+  ok(inp('saveAmprahOvr', { key: key, ovr: { alok: [{ t: 'L:B3-10', k: 'lain', v: 7000000 }, { t: 'L:B3-11', k: 'lain', v: 5000000 }], rinc: [], ket: '- dibagi' } }));
+  let o = ok(lht('load')).data.amOvr[key];
+  assert.deepStrictEqual(o.alok, [{ t: 'L:B3-10', k: 'lain', v: 7000000 }, { t: 'L:B3-11', k: 'lain', v: 5000000 }]);
+  assert.strictEqual(o.ket, '- dibagi'); assert.strictEqual(o.oleh, 'input');
+  ok(inp('saveAmprahOvr', { key: key, ovr: { alok: [{ t: 'L:B3-11', k: 'lain', v: 12000000 }] } }));
+  assert.strictEqual(sheets.Amprah_Koreksi.rows.filter(r => r && r[0] === key).length, 1);
+  err(inp('saveAmprahOvr', { key: key, ovr: { alok: [{ t: 'Z:1', k: 'lain', v: 1 }] } }), 'VALIDATION', 'target');
+  err(inp('saveAmprahOvr', { key: 'x', ovr: {} }), 'VALIDATION', 'kunci pendek');
+  ok(inp('saveAmprahOvr', { key: key, ovr: null }));
+  assert.strictEqual(ok(lht('load')).data.amOvr[key], undefined);
+  ok(inp('saveAmprahOvr', { key: key, ovr: { alok: [{ t: 'L:B3-11', k: 'lain', v: 1 }] } }));
+});
+
+test('publishRab dengan data: aturan & koreksi Amprah ikut dipetakan ulang', () => {
+  const v = ok(adm('ver'));
+  const d = ok(adm('load')).data;
+  d.set.amprahRules = [{ jenis: 'KONTRAKAN', kata: 'cewe', t: 'L:B3-12' }];
+  Object.keys(d.amOvr).forEach(k => { d.amOvr[k].alok = [{ t: 'L:B3-12', k: 'lain', v: 1 }]; });
+  ok(adm('publishRab', { rab: RAB, data: d, baseDataVer: v.dataVer }));
+  const after = ok(lht('load')).data;
+  assert.deepStrictEqual(after.set.amprahRules, [{ jenis: 'KONTRAKAN', kata: 'cewe', t: 'L:B3-12' }]);
+  assert.ok(Object.values(after.amOvr).every(o => o.alok[0].t === 'L:B3-12'));
+  assert.deepStrictEqual(after.set.amprahSrc, { id: '1AbC-xyz_123', sheet: 'TRACKING' });
+});
+
 test('getLog mencatat aksi', () => {
   const log = ok(adm('getLog', { limit: 5 }));
-  assert.ok(log.length === 5 && log[0].aksi === 'importData');
+  assert.ok(log.length === 5 && log[0].aksi === 'publishRab');
 });
 
 if (process.env.RAB_XLSX) {

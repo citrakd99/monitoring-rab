@@ -8,6 +8,8 @@ admin cukup "menerbitkan" RAB sekali per revisi dari webapp, lalu semua pengguna
 | `Meta`, `Budget`, `AHS`, `HARSAT` | hasil baca RAB (beberapa ribu baris) | Admin, saat terbitkan RAB |
 | `Transaksi`, `Alokasi`, `Rincian` | transaksi, pembagian ke item/paket, rincian harga satuan | Admin & Input |
 | `Paket`, `Paket_Item` | paket pekerjaan dan anggotanya | Admin & Input |
+| `Setting` | link sheet Amprah, aturan pemetaan Amprah | Admin |
+| `Amprah_Koreksi` | koreksi alokasi per baris Amprah | Admin & Input |
 | `Log` | jejak siapa mengubah apa | otomatis |
 
 Isi tab boleh dibaca/difilter langsung di Google Sheets. **Jangan mengubah urutan kolom atau nama tab.**
@@ -54,6 +56,9 @@ Isi tab boleh dibaca/difilter langsung di Google Sheets. **Jangan mengubah uruta
 - Bentrok: bila dua orang mengubah **transaksi yang sama**, simpanan kedua ditolak (`CONFLICT`), pengguna diberi tahu
   dan datanya dimuat ulang. Semua tulis memakai `LockService` sehingga tidak saling menimpa.
 
+Tab `Setting` dan `Amprah_Koreksi` dibuat otomatis saat pertama dipakai — database lama cukup ditempel kode baru +
+*New version*, tidak perlu menjalankan `setup` ulang.
+
 ## Mengubah kode backend
 1. Ubah `Db.gs` / `Code.gs` / `Setup.gs`, lalu buat ulang file gabungan: `node backend/build.js` (uji memeriksa ini).
 2. Tempel ulang `AppsScript-SalinSemua.gs` ke editor Apps Script → Simpan.
@@ -81,3 +86,5 @@ POST `Content-Type: text/plain`, body `{"code","action","payload"}`.
 | `publishRab` | admin | `{rab, data?, baseDataVer?}` | tulis Budget/AHS/HARSAT/Meta (+ data hasil pemetaan ulang) |
 | `importData` | admin | `{data:{tx,pkgs}, mode:'merge'\|'replace'}` | pindahkan data dari backup/browser |
 | `getLog` | admin | `{limit?}` | jejak audit |
+| `saveSetting` | admin | `{key:'amprahSrc'\|'amprahRules', value}` | pengaturan (JSON) |
+| `saveAmprahOvr` | admin, input | `{key, ovr:{alok,rinc}\|null}` | koreksi alokasi satu baris Amprah (null = kembali ke aturan) |

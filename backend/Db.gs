@@ -11,7 +11,10 @@ const TABLES = {
   Rincian: ['tx_id', 'h', 'nama', 'qty', 'sat', 'harga'],
   Paket: ['id', 'nama', 'ket', 'updated'],
   Paket_Item: ['pkg_id', 'item_id'],
-  Log: ['waktu', 'peran', 'aksi', 'detail']
+  Log: ['waktu', 'peran', 'aksi', 'detail'],
+  // pengaturan aplikasi (link sheet Amprah, aturan pemetaan) dan koreksi alokasi per baris Amprah
+  Setting: ['key', 'value', 'updated'],
+  Amprah_Koreksi: ['key', 'data', 'updated', 'oleh']
 };
 /* Kolom teks: diformat "@" agar Sheets tidak mengubah "001" jadi 1, tanggal jadi Date, atau "- Beton" jadi rumus. */
 const TEXT_COLS = {
@@ -24,15 +27,26 @@ const TEXT_COLS = {
   Rincian: ['tx_id', 'h', 'nama', 'sat'],
   Paket: ['id', 'nama', 'ket'],
   Paket_Item: ['pkg_id', 'item_id'],
-  Log: ['waktu', 'peran', 'aksi', 'detail']
+  Log: ['waktu', 'peran', 'aksi', 'detail'],
+  Setting: ['key', 'value'],
+  Amprah_Koreksi: ['key', 'data', 'oleh']
 };
 
 function ss_() {
   const id = PropertiesService.getScriptProperties().getProperty('SHEET_ID');
   return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
 }
+/* Tab yang ditambahkan di versi lebih baru: dibuat otomatis bila belum ada (tanpa perlu setup ulang). */
+const AUTO_TABLES = ['Setting', 'Amprah_Koreksi'];
 function sheet_(name) {
-  const sh = ss_().getSheetByName(name);
+  const ss = ss_();
+  let sh = ss.getSheetByName(name);
+  if (!sh && AUTO_TABLES.indexOf(name) >= 0) {
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, TABLES[name].length).setValues([TABLES[name]]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    applyTextFormat_(sh, name);
+  }
   if (!sh) throw apiError_('NOT_SETUP', 'Tab "' + name + '" belum ada. Jalankan setup() dulu.');
   return sh;
 }

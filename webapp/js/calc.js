@@ -17,7 +17,9 @@
       { id: 'np-obname', nama: 'Obname (upah mandor)', k: 'upah' },
       { id: 'np-mat', nama: 'Material (beli langsung)', k: 'mat' },
       { id: 'np-orang', nama: 'Bayar orang / harian', k: 'upah' },
-      { id: 'np-lain', nama: 'Lain-lain', k: 'lain' }
+      { id: 'np-lain', nama: 'Lain-lain', k: 'lain' },
+      // otomatis dari sheet Amprah (tidak bisa dipilih di form transaksi manual)
+      { id: 'np-amprah', nama: 'Amprah (kas kecil)', k: 'lain', auto: true }
     ]
   };
   var KAT_ALL = KAT.PO.concat(KAT.NP);

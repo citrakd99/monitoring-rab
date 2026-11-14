@@ -9,7 +9,7 @@
  *  - input : catat/ubah/hapus transaksi dan paket
  *  - view  : hanya membaca
  */
-const API_VERSION = '1.0.0';
+const API_VERSION = '1.1.0';
 const MAX_FAILS = 10;
 const LOCK_SECONDS = 600;
 const ALL = ['admin', 'input', 'view'], WRITE = ['admin', 'input'], ADMIN = ['admin'];
@@ -165,7 +165,46 @@ function readData_() {
       created: num_(r.created) || 0, updated: num_(r.updated) || 0, oleh: str_(r.oleh), alok: alok[id] || [], rinc: rinc[id] || [] };
   });
   const pkgs = readTable_('Paket').map(function (r) { const id = str_(r.id); return { id: id, nama: str_(r.nama), ket: str_(r.ket), updated: num_(r.updated) || 0, lines: pitems[id] || [] }; });
-  return { tx: tx, pkgs: pkgs };
+  const set = {};
+  readTable_('Setting').forEach(function (r) { try { set[str_(r.key)] = JSON.parse(str_(r.value)); } catch (e) { /* abaikan nilai rusak */ } });
+  const amOvr = {};
+  readTable_('Amprah_Koreksi').forEach(function (r) {
+    try { const d = JSON.parse(str_(r.data)); d.updated = num_(r.updated) || 0; d.oleh = str_(r.oleh); amOvr[str_(r.key)] = d; } catch (e) { /* abaikan */ }
+  });
+  return { tx: tx, pkgs: pkgs, set: set, amOvr: amOvr };
+}
+
+const SETTING_KEYS = ['amprahSrc', 'amprahRules'];
+function cleanSetting_(key, value) {
+  if (SETTING_KEYS.indexOf(key) < 0) throw apiError_('VALIDATION', 'Pengaturan tidak dikenal: ' + key);
+  const s = JSON.stringify(value === undefined ? null : value);
+  if (s.length > 45000) throw apiError_('VALIDATION', 'Pengaturan terlalu besar');
+  return s;
+}
+function cleanOvr_(key, ovr) {
+  if (!/^[A-Za-z0-9:_.|-]{4,200}$/.test(str_(key))) throw apiError_('VALIDATION', 'Kunci baris Amprah tidak valid');
+  if (ovr === null) return null;
+  const alok = (ovr.alok || []).map(function (a) {
+    if (!/^[LPX]:[A-Za-z0-9_-]+$/.test(str_(a.t))) throw apiError_('VALIDATION', 'Target alokasi tidak valid: ' + a.t);
+    if (['mat', 'upah', 'lain'].indexOf(a.k) < 0) throw apiError_('VALIDATION', 'Komponen alokasi tidak valid');
+    return { t: a.t, k: a.k, v: Number(a.v) || 0 };
+  }).filter(function (a) { return a.v; });
+  const rinc = (ovr.rinc || []).map(function (r) {
+    return { h: str_(r.h).slice(0, 20), nama: str_(r.nama).slice(0, 200), qty: Number(r.qty) || 0, sat: str_(r.sat).slice(0, 20), harga: Number(r.harga) || 0 };
+  }).filter(function (r) { return r.nama; });
+  const s = JSON.stringify({ alok: alok, rinc: rinc, ket: str_(ovr.ket).slice(0, 300) });
+  if (s.length > 45000) throw apiError_('VALIDATION', 'Koreksi terlalu besar');
+  return s;
+}
+function writeSettings_(set) {
+  writeTable_('Setting', Object.keys(set || {}).filter(function (k) { return SETTING_KEYS.indexOf(k) >= 0; })
+    .map(function (k) { return { key: k, value: cleanSetting_(k, set[k]), updated: Date.now() }; }));
+}
+function writeOvrs_(amOvr, role) {
+  writeTable_('Amprah_Koreksi', Object.keys(amOvr || {}).map(function (k) {
+    const o = amOvr[k];
+    return { key: k, data: cleanOvr_(k, o), updated: Number(o.updated) || Date.now(), oleh: str_(o.oleh) || role };
+  }));
 }
 
 const KATS = ['po-mat', 'po-sub', 'po-sewa', 'np-obname', 'np-mat', 'np-orang', 'np-lain'];
@@ -262,6 +301,24 @@ const ACTIONS = {
     return { dataVer: bump_('DATA_VER') };
   } },
 
+  /** Admin: pengaturan aplikasi (link sheet Amprah, aturan pemetaan). value = JSON apa saja (≤45 rb karakter). */
+  saveSetting: { roles: ADMIN, write: true, fn: function (p, a) {
+    const key = str_(p.key), s = cleanSetting_(key, p.value);
+    const r = findRow_('Setting', key);
+    upsertRow_('Setting', { key: key, value: s, updated: Date.now() });
+    appendLog_(a.role, 'saveSetting', { key: key, baru: !r });
+    return { dataVer: bump_('DATA_VER') };
+  } },
+
+  /** Koreksi alokasi untuk satu baris Amprah (ovr = null → kembali ke aturan otomatis). */
+  saveAmprahOvr: { roles: WRITE, write: true, fn: function (p, a) {
+    const key = str_(p.key), s = cleanOvr_(key, p.ovr === undefined ? null : p.ovr);
+    if (s === null) deleteById_('Amprah_Koreksi', key);
+    else upsertRow_('Amprah_Koreksi', { key: key, data: s, updated: Date.now(), oleh: a.role });
+    appendLog_(a.role, 'saveAmprahOvr', { key: key, hapus: s === null });
+    return { dataVer: bump_('DATA_VER') };
+  } },
+
   /** Admin: terbitkan RAB hasil baca file .xlsx. Opsional sekaligus menulis ulang data hasil pemetaan ulang id item. */
   publishRab: { roles: ADMIN, write: true, fn: function (p, a) {
     const rab = p.rab;
@@ -280,15 +337,17 @@ const ACTIONS = {
   importData: { roles: ADMIN, write: true, fn: function (p, a) {
     const d = p.data || {};
     const incomingTx = (d.tx || []).map(cleanTx_), incomingPk = (d.pkgs || []).map(cleanPkg_);
-    let tx = incomingTx, pkgs = incomingPk;
+    let tx = incomingTx, pkgs = incomingPk, set = d.set || null, amOvr = d.amOvr || null;
     if (p.mode !== 'replace') {
       const cur = readData_();
       const txMap = {}; cur.tx.forEach(function (t) { txMap[t.id] = t; }); incomingTx.forEach(function (t) { txMap[t.id] = t; });
       const pkMap = {}; cur.pkgs.forEach(function (k) { pkMap[k.id] = k; }); incomingPk.forEach(function (k) { pkMap[k.id] = k; });
       tx = Object.keys(txMap).map(function (k) { return txMap[k]; });
       pkgs = Object.keys(pkMap).map(function (k) { return pkMap[k]; });
+      if (set) set = Object.assign({}, cur.set, set);
+      if (amOvr) amOvr = Object.assign({}, cur.amOvr, amOvr);
     }
-    replaceAllData_({ tx: tx, pkgs: pkgs }, a.role);
+    replaceAllData_({ tx: tx, pkgs: pkgs, set: set, amOvr: amOvr }, a.role);
     appendLog_(a.role, 'importData', { mode: p.mode || 'merge', tx: incomingTx.length, pkgs: incomingPk.length });
     return { tx: tx.length, pkgs: pkgs.length, dataVer: bump_('DATA_VER') };
   } },
@@ -317,4 +376,7 @@ function replaceAllData_(d, role) {
   writeTable_('Paket', pkgs.map(function (k) { return { id: k.id, nama: k.nama, ket: k.ket, updated: k.updated }; }));
   pkgs.forEach(function (k) { k.lines.forEach(function (l) { pi.push({ pkg_id: k.id, item_id: l }); }); });
   writeTable_('Paket_Item', pi);
+  // pengaturan & koreksi Amprah hanya ditulis bila dikirim (mis. hasil pemetaan ulang id item)
+  if (d.set) writeSettings_(d.set);
+  if (d.amOvr) writeOvrs_(d.amOvr, role);
 }
