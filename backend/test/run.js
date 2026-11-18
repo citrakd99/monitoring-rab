@@ -69,7 +69,7 @@ test('request rusak / aksi asing / izin peran', () => {
 
 test('load sebelum RAB terbit: rab null, data kosong', () => {
   const d = ok(lht('load'));
-  assert.strictEqual(d.rab, null); assert.deepStrictEqual(d.data, { tx: [], pkgs: [], set: {}, amOvr: {} });
+  assert.strictEqual(d.rab, null); assert.deepStrictEqual(d.data, { tx: [], pkgs: [], set: {}, amOvr: {}, poOvr: {} });
 });
 
 let rabVer;
@@ -219,9 +219,109 @@ test('publishRab dengan data: aturan & koreksi Amprah ikut dipetakan ulang', () 
   assert.deepStrictEqual(after.set.amprahSrc, { id: '1AbC-xyz_123', sheet: 'TRACKING' });
 });
 
+/* ---------- PO dari SUMMARY COST (sheet lain, privat) ---------- */
+const PO_ID = 'EXT-SUMMARY-0123456789abc';
+const d = s => new Date(s + 'T00:00:00+07:00');
+const PO_TABS = {
+  'PO ': [
+    ['DAFTAR PURCHASE ORDER'], [], [],
+    ['NO.', 'TANGGAL', 'Supplier/Vendor', 'NO. PO.', 'NO PR', 'DESCRIPTION', 'QUANTITY UNIT', '', ' PRICE / UNIT ', ' TOTAL ', ' DPP ', ' PPN 11% ', ' PPH ', ' ADMIN ', ' ONGKIR ', ' TERBAYAR ', ' SISA ', 'REMARK', 'PROYEK', 'KATEGORI', 'OWNER'],
+    ['', '', '', '', '', '', '', '', '', '', 100, 11, 0, 2500, '', 37000, 76500],
+    ['123.26-001', d('2026-10-06'), 'PT. CONTOH', 'PO NO. 001', 'PR 003', 'Jasa desain', '', '', '', 0, '', '', '', '', '', '', '', '', 'P', 'TEST & SERTIFIKAT', 'O'],
+    ['123.26-001', d('2026-10-06'), 'PT. CONTOH', 'PO NO. 001', 'PR 003', 'TOTAL', 1, 'ls', 100, 100, '', '', '', '', '', '', '', '', 'P', 'TEST & SERTIFIKAT', 'O'],
+    ['123.26-002', d('2026-10-09'), '- Vendor Strip', 'PO NO. 002', '', '=Kabel NYM', 2, 'roll', 50, 100, '', '', '', '', '', '', '', '', 'P', 'INVENTARIS', 'O']
+  ],
+  'PO TERBAYAR': [
+    ['RINCIAN KAS PROYEK'], ['TGL', 'No Cek', 'PROYEK', 'BKM', 'BKK', 'VENDOR/NAMA', 'RINCIAN TRANSAKSI', 'DEBIT', 'KREDIT'],
+    [d('2026-10-22'), '', 'P', '', 4541, 'Contoh', '001/123-26.001', '', 22.2],
+    ['', '', 'P', '', '', 'Contoh', 'Biaya Trf', '', 2500],
+    ['', '', '', '', '', '', '', '', 2522.2]
+  ],
+  HUTANG: [['Hutang'], ['No.', 'Tanggal Diterima', 'Jatuh Tempo', 'Vendor', 'PO . No', 'No. Kwitansi', ' PPH ', ' SISA HUTANG ', 'Project'],
+    ['', d('2026-11-02'), 'CBD', 'Vendor Strip', '001/123-26.002', 'INV-1', '', 111, 'P'], ['', '', '', '', '', '', 'TOTAL', 111]]
+};
+
+test('loadPo: belum diatur → configured:false; id tanpa akses → NO_ACCESS', () => {
+  assert.deepStrictEqual(ok(lht('loadPo')), { configured: false });
+  ok(adm('saveSetting', { key: 'poSrc', value: { id: 'TIDAK-ADA-AKSES-0123456789' } }));
+  err(lht('loadPo', { force: true }), 'NO_ACCESS', 'tanpa akses');
+});
+
+test('loadPo: hanya kolom & baris bernilai, tanggal → teks, cache 5 menit, force membaca ulang', () => {
+  sim.addExternal(PO_ID, PO_TABS, 'SUMMARY COST - CONTOH');
+  ok(adm('saveSetting', { key: 'poSrc', value: { id: PO_ID } }));
+  const r = ok(lht('loadPo', { force: true }));
+  assert.strictEqual(r.configured, true); assert.strictEqual(r.title, 'SUMMARY COST - CONTOH');
+  assert.strictEqual(r.po.length, 3, 'ringkasan + 2 baris bernilai (baris deskripsi tanpa nilai dibuang)');
+  assert.strictEqual(r.po[1][1], '2026-10-06'); assert.strictEqual(r.po[1][17], 'TEST & SERTIFIKAT');
+  assert.strictEqual(r.po[0].length, 18, 'kolom A..Q + T saja (tanpa PROYEK/OWNER)');
+  assert.strictEqual(r.po[2][5], '=Kabel NYM', 'teks tetap teks');
+  assert.strictEqual(r.pay.length, 3); assert.strictEqual(r.pay[0][0], '2026-10-22');
+  assert.strictEqual(r.hut.length, 2);
+  const g0 = sim.stats.extReads;
+  const c = ok(lht('loadPo'));
+  assert.strictEqual(c.cached, true); assert.strictEqual(sim.stats.extReads, g0, 'dari cache, tidak membaca sheet SUMMARY COST');
+  ok(lht('loadPo', { force: true }));
+  assert.ok(sim.stats.extReads > g0, 'force membaca ulang');
+});
+
+test('loadPo → Po.parse: pembayaran & hutang cocok ke PO, pajak terdeteksi, baris total diabaikan', () => {
+  const Po = require(path.join(__dirname, '..', '..', 'webapp', 'js', 'po.js'));
+  const p = Po.parse(ok(lht('loadPo')));
+  assert.strictEqual(p.pos.length, 2);
+  const a = p.pos[0], b = p.pos[1];
+  assert.strictEqual(a.dpp, 100); assert.strictEqual(a.paidGross, 22.2); assert.strictEqual(a.taxAuto, 'sheet');
+  assert.ok(Math.abs(a.paidGross / a.taxF - 20) < 1e-9, 'DP 20% + PPN → 20 tanpa pajak');
+  assert.strictEqual(b.hutGross, 111); assert.strictEqual(b.taxAuto, 'ppn');
+  assert.deepStrictEqual(p.unmatched.map(x => x.ref), ['Biaya Trf']);
+});
+
+test('savePoOvr: alokasi + mode pajak, target seksi (S:) diterima, validasi', () => {
+  ok(inp('savePoOvr', { key: 'PO-12326001', ovr: { alok: [{ t: 'S:PRS-1uafc05', k: 'mat', v: 60 }, { t: 'L:B3-10', k: 'mat', v: 40 }], tax: 'ppn' } }));
+  ok(inp('savePoOvr', { key: 'PO-12326002', ovr: { alok: null, tax: 'ppn-pph2' } }));
+  const o = ok(lht('load')).data.poOvr;
+  assert.deepStrictEqual(o['PO-12326001'].alok, [{ t: 'S:PRS-1uafc05', k: 'mat', v: 60 }, { t: 'L:B3-10', k: 'mat', v: 40 }]);
+  assert.strictEqual(o['PO-12326002'].alok, null); assert.strictEqual(o['PO-12326002'].tax, 'ppn-pph2');
+  err(inp('savePoOvr', { key: 'PO-12326001', ovr: { tax: 'pajak-aneh' } }), 'VALIDATION', 'mode pajak');
+  err(inp('savePoOvr', { key: 'PO-12326001', ovr: { alok: [{ t: 'S:a b', k: 'mat', v: 1 }] } }), 'VALIDATION', 'seksi tak valid');
+  err(lht('savePoOvr', { key: 'PO-12326001', ovr: null }), 'FORBIDDEN', 'view');
+  ok(inp('savePoOvr', { key: 'PO-12326002', ovr: null }));
+  assert.strictEqual(ok(lht('load')).data.poOvr['PO-12326002'], undefined);
+});
+
+if (process.env.PO_XLSX) {
+  test('PO asli: keluaran server identik dengan membaca file .xlsx langsung (paritas server ↔ lokal)', () => {
+    const W = path.join(__dirname, '..', '..', 'webapp');
+    const XLSX = require(path.join(W, 'vendor', 'xlsx.full.min.js'));
+    const Po = require(path.join(W, 'js', 'po.js'));
+    const buf = require('fs').readFileSync(process.env.PO_XLSX);
+    // seperti Google Sheets: sel bertipe tanggal → Date tepat tengah malam zona sheet (Asia/Jakarta)
+    const wbD = XLSX.read(buf, { type: 'buffer' });
+    const tabs = {};
+    wbD.SheetNames.forEach(n => {
+      const ws = wbD.Sheets[n], aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+      Object.keys(ws).forEach(a => {
+        if (a[0] === '!') return; const c = ws[a];
+        if (c.t === 'n' && c.z && XLSX.SSF.is_date(c.z)) { const rc = XLSX.utils.decode_cell(a), p = XLSX.SSF.parse_date_code(c.v); if (aoa[rc.r]) aoa[rc.r][rc.c] = new Date(Date.UTC(p.y, p.m - 1, p.d) - 7 * 3600e3); }
+      });
+      tabs[n] = aoa;
+    });
+    sim.addExternal('EXT-REAL-SUMMARY-0123456789', tabs, 'SUMMARY COST');
+    ok(adm('saveSetting', { key: 'poSrc', value: { id: 'EXT-REAL-SUMMARY-0123456789' } }));
+    const srv = Po.parse(ok(lht('loadPo', { force: true })));
+    const loc = Po.parse(Po.rawFromWorkbook(XLSX, XLSX.read(buf, { type: 'buffer' }), 'x'));
+    const sum = p => ({ n: p.pos.length, dpp: Math.round(p.pos.reduce((a, x) => a + x.dpp, 0)), pay: p.pos.reduce((a, x) => a + x.paidGross, 0), hut: p.pos.reduce((a, x) => a + x.hutGross, 0), un: p.unmatched.length, tgl: p.pos.map(x => x.tgl).join(), tax: p.pos.map(x => x.taxAuto).join() });
+    const a1 = sum(srv), b1 = sum(loc);
+    Object.keys(a1).forEach(k => { if (JSON.stringify(a1[k]) !== JSON.stringify(b1[k])) console.log('        beda ' + k + ': server=' + String(a1[k]).slice(0, 300) + ' | lokal=' + String(b1[k]).slice(0, 300)); });
+    assert.deepStrictEqual(a1, b1);
+    assert.ok(sim.cacheMap['po:EXT-REAL-SUMMARY-0123456789:n'], 'tersimpan di cache (dipecah bila besar)');
+    console.log('        ' + srv.pos.length + ' PO · DPP ' + sum(srv).dpp.toLocaleString('id-ID') + ' · bayar bruto ' + sum(srv).pay.toLocaleString('id-ID') + ' · hutang ' + sum(srv).hut.toLocaleString('id-ID') + ' · bagian cache ' + sim.cacheMap['po:EXT-REAL-SUMMARY-0123456789:n']);
+  });
+}
+
 test('getLog mencatat aksi', () => {
   const log = ok(adm('getLog', { limit: 5 }));
-  assert.ok(log.length === 5 && log[0].aksi === 'publishRab');
+  assert.ok(log.length === 5 && log.every(l => l.aksi && l.waktu && l.peran));
 });
 
 if (process.env.RAB_XLSX) {

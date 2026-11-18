@@ -18,6 +18,7 @@
     d.tx = d.tx || []; d.pkgs = d.pkgs || [];
     d.set = d.set || {};      // pengaturan: amprahSrc {id}, amprahRules [...]
     d.amOvr = d.amOvr || {};  // koreksi alokasi per baris Amprah: {key: {alok, rinc, ket}}
+    d.poOvr = d.poOvr || {};  // koreksi per PO (SUMMARY COST): {key: {alok|null, tax}}
     return d;
   }
 
@@ -64,11 +65,28 @@
     },
     /** Semua transaksi untuk dihitung/ditampilkan: manual + Amprah (dibaca dari sheet, tidak disimpan). */
     allTx: function () {
-      if (!window.Amprah) return this.data.tx;
-      var src = this.data.set.amprahSrc;
-      var rows = Amprah.rows(src);
-      if (!rows.length) return this.data.tx;
-      return this.data.tx.concat(Amprah.toTx(rows, Amprah.rulesOf(this.data.set, this.rab), this.data.amOvr, this.rab));
+      var out = this.data.tx;
+      if (window.Amprah) {
+        var rows = Amprah.rows(this.data.set.amprahSrc);
+        if (rows.length) out = out.concat(Amprah.toTx(rows, Amprah.rulesOf(this.data.set, this.rab), this.data.amOvr, this.rab));
+      }
+      if (window.Po) {
+        var pp = Po.parsed(this.poSrc());
+        if (pp) out = out.concat(Po.toTx(pp, Po.rulesOf(this.data.set, this.rab), this.data.poOvr, this.rab));
+      }
+      return out;
+    },
+    /** Sumber PO aktif: mode server = id sheet di pengaturan; mode lokal = file yang di-upload. */
+    poSrc: function () {
+      if (window.Sync && Sync.enabled()) return this.data.set.poSrc || null;
+      return Po.cache && Po.cache.id === 'file' ? { id: 'file' } : null;
+    },
+    savePoOvr: function (key, ovr) {
+      if (!this.guard()) return false;
+      if (ovr) { ovr.updated = Date.now(); this.data.poOvr[key] = ovr; } else delete this.data.poOvr[key];
+      this.save();
+      if (window.Sync) Sync.push('savePoOvr', { key: key, ovr: ovr || null });
+      return true;
     },
     findTx: function (id) { return this.allTx().find(function (t) { return t.id === id; }); },
     saveSetting: function (key, value) {
@@ -91,6 +109,7 @@
       // alokasi ke paket yang dihapus dilepas (menjadi belum dialokasikan) — server melakukan hal yang sama
       this.data.tx.forEach(function (t) { t.alok = (t.alok || []).filter(function (a) { return a.t !== 'P:' + id; }); });
       var self = this; Object.keys(this.data.amOvr).forEach(function (k) { var o = self.data.amOvr[k]; o.alok = (o.alok || []).filter(function (a) { return a.t !== 'P:' + id; }); });
+      Object.keys(this.data.poOvr).forEach(function (k) { var o = self.data.poOvr[k]; if (o.alok) o.alok = o.alok.filter(function (a) { return a.t !== 'P:' + id; }); });
       this.save();
       if (window.Sync) Sync.push('deletePkg', { id: id });
       return true;
@@ -120,6 +139,8 @@
         var self = this;
         Object.keys(this.data.amOvr).forEach(function (k) { (self.data.amOvr[k].alok || []).forEach(remapT); self.data.amOvr[k].alok = self.data.amOvr[k].alok.filter(function (a) { return a.t; }); });
         if (Array.isArray(this.data.set.amprahRules)) this.data.set.amprahRules.forEach(remapT);
+        Object.keys(this.data.poOvr).forEach(function (k) { var o = self.data.poOvr[k]; if (o.alok) { o.alok.forEach(remapT); o.alok = o.alok.filter(function (a) { return a.t; }); } });
+        if (Array.isArray(this.data.set.poRules)) this.data.set.poRules.forEach(remapT);
         this.save();
       }
       this.rab = rab; this.saveRab();
@@ -138,6 +159,7 @@
       try { localStorage.removeItem(KEY_RAB); localStorage.removeItem(KEY_DATA); } catch (e) { /* abaikan */ }
       this.rab = null; this.data = norm(null);
       if (window.Amprah) Amprah.clearCache();
+      if (window.Po) Po.clearCache();
     }
   };
   root.Store = Store;

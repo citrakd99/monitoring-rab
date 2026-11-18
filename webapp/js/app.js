@@ -9,7 +9,7 @@
     h: { view: 'dasar', q: '', j: '', f: 'used', sort: 'need' },
     a: { q: '', src: '', used: true },
     b: { q: '', g: '', f: '', open: {}, sel: {} },
-    t: { q: '', j: '', k: '', m: '' },
+    t: { q: '', j: '', k: '', m: '', s: '' },
     p: { q: '' }
   };
   try { var lt = localStorage.getItem('rabmon.v1.tab'); if (lt) ui.tab = lt; } catch (e) { /* abaikan */ }
@@ -55,6 +55,12 @@
       var x = C.L[t.slice(2)];
       if (!x) return { nama: '(item tidak ditemukan)', sub: '', budget: 0, real: 0, missing: true };
       return { nama: x.it.desc, sub: grpLabel(x.it.g) + ' › ' + x.it.sec + (x.it.sub ? ' › ' + x.it.sub : ''), budget: x.it.total, real: x.real, kind: 'item' };
+    }
+    if (t.indexOf('S:') === 0) {
+      var ids = C.SEC[t];
+      if (!ids) return { nama: '(seksi tidak ditemukan)', sub: '', budget: 0, real: 0, missing: true };
+      var it0 = C.L[ids[0]].it;
+      return { nama: '§ ' + it0.sec, sub: 'Seksi · ' + grpLabel(it0.g) + ' · ' + ids.length + ' item (dibagi sebanding budget)', budget: ids.reduce(function (a, id) { return a + C.L[id].it.total; }, 0), real: ids.reduce(function (a, id) { return a + C.L[id].real; }, 0), kind: 'sec' };
     }
     if (t.indexOf('P:') === 0) {
       var P = C.pkgs[t.slice(2)];
@@ -129,6 +135,7 @@
     var nPO = S.allTx().filter(function (x) { return !x.batal && x.jenis === 'PO'; }).length;
     var h = '';
     h += amprahDashNote();
+    h += poDashNote();
     if (t.unallocTx.length) h += '<div class="note">' + t.unallocTx.length + ' transaksi senilai <b>' + rp(t.unalloc) + '</b> belum (penuh) dialokasikan ke item/paket budget — angka per kelompok belum memasukkannya. <button class="lnk" data-act="txUnalloc">Lihat</button></div>';
     if (t.orphan) h += '<div class="note crit">Ada alokasi senilai <b>' + rp(t.orphan) + '</b> yang menunjuk item/paket yang sudah tidak ada (mis. setelah impor ulang RAB). Perbaiki di transaksi terkait.</div>';
     h += '<div class="grid kpis">' +
@@ -194,6 +201,8 @@
       '</tbody></table></div>';
   }
   function jenisTag(x) {
+    if (x.src === 'po') return x.payOnly ? '<span class="tag np">Bayar</span> <span class="small">tanpa PO</span>' + (x.ovr ? ' <span class="tag">dikoreksi</span>' : '')
+      : '<span class="tag po">PO</span> <span class="small">' + esc(x.poCat || '') + '</span> <span class="pill ' + (x.status === 'Lunas' ? 'ok' : x.status === 'Terbit' ? '' : 'warn') + '">' + esc(x.status) + '</span>' + (x.ovr || x.ovrTax ? ' <span class="tag">dikoreksi</span>' : '');
     if (x.src === 'amprah') return '<span class="tag am">Amprah</span> <span class="small">' + esc(x.jenisAmprah || '') + '</span> ' + notaPill(x) + (x.ovr ? ' <span class="tag">dikoreksi</span>' : '');
     var k = K.KAT_BY[x.kat];
     return '<span class="tag ' + (x.jenis === 'PO' ? 'po' : 'np') + '">' + (x.jenis === 'PO' ? 'PO' : 'Non-PO') + '</span> <span class="small">' + esc(k ? k.nama.replace(/^PO /, '') : x.kat) + '</span>' + (x.batal ? ' <span class="pill crit">Batal</span>' : '');
@@ -298,6 +307,7 @@
     return S.allTx().filter(function (x) {
       if (f.j && x.jenis !== f.j) return false;
       if (f.k && x.kat !== f.k) return false;
+      if (f.s && (x.src || 'manual') !== f.s) return false;
       if (f.m && (x.tgl || '').slice(0, 7) !== f.m) return false;
       if (f.unalloc) { var u = C.tot.unallocTx.some(function (r) { return r.t.id === x.id; }); if (!u) return false; }
       if (q && (x.no + ' ' + x.pihak + ' ' + x.uraian + ' ' + (x.ket || '')).toLowerCase().indexOf(q) < 0) return false;
@@ -310,6 +320,7 @@
     var months = {}; S.allTx().forEach(function (x) { if (x.tgl) months[x.tgl.slice(0, 7)] = 1; });
     var h = '<div class="bar"><div class="grow"><input type="search" id="tq" placeholder="Cari no. dokumen, vendor/mandor, uraian…" value="' + esc(f.q) + '"></div>' +
       '<div class="seg" id="tj">' + [['', 'Semua'], ['PO', 'PO'], ['NP', 'Non-PO']].map(function (o) { return '<button data-v="' + o[0] + '" class="' + (f.j === o[0] ? 'on' : '') + '">' + o[1] + '</button>'; }).join('') + '</div>' +
+      '<select id="ts"><option value="">Semua sumber</option>' + [['manual', 'Dicatat manual'], ['po', 'Sheet PO'], ['amprah', 'Sheet Amprah']].map(function (o) { return '<option value="' + o[0] + '"' + (f.s === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
       '<select id="tk"><option value="">Semua kategori</option>' + K.KAT_ALL.map(function (k) { return '<option value="' + k.id + '"' + (f.k === k.id ? ' selected' : '') + '>' + esc(k.nama) + '</option>'; }).join('') + '</select>' +
       '<select id="tm"><option value="">Semua bulan</option>' + Object.keys(months).sort().reverse().map(function (m) { return '<option value="' + m + '"' + (f.m === m ? ' selected' : '') + '>' + monthLbl(m) + '</option>'; }).join('') + '</select>' +
       (f.unalloc ? '<button class="btn" data-act="clrUnalloc">✕ Hanya belum dialokasikan</button>' : '') +
@@ -337,6 +348,7 @@
     tq.addEventListener('input', function () { clearTimeout(tmr); tmr = setTimeout(function () { ui.t.q = tq.value; renderTx(); var n = $('#tq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
     $$('#tj button').forEach(function (b) { b.addEventListener('click', function () { ui.t.j = b.dataset.v; renderTx(); }); });
     $('#tk').addEventListener('change', function (e) { ui.t.k = e.target.value; renderTx(); });
+    $('#ts').addEventListener('change', function (e) { ui.t.s = e.target.value; renderTx(); });
     $('#tm').addEventListener('change', function (e) { ui.t.m = e.target.value; renderTx(); });
   }
 
@@ -493,6 +505,7 @@
       '<div class="list-row"><span>' + (Sync.enabled() ? 'Hapus salinan di browser ini & unduh ulang dari server' : 'Hapus semua data di browser ini') + '</span><button class="btn danger" data-act="reset">' + (Sync.enabled() ? 'Unduh ulang' : 'Hapus') + '</button></div>' +
       (S.data.savedAt ? '<p class="small muted" style="margin-top:8px">Disimpan terakhir ' + new Date(S.data.savedAt).toLocaleString('id-ID') + '</p>' : '') +
       '</div></div>';
+    h += poCard();
     h += amprahCard();
     h += installCard();
     $('#tab-data').innerHTML = h;
@@ -547,13 +560,13 @@
   function publishRab(rab) {
     return Sync.load().then(function (fresh) {
       if (!fresh) throw new Error('Tidak bisa memuat data server (offline?). Coba lagi.');
-      var snap = function () { return JSON.stringify(S.data.tx.map(function (t) { return t.alok; })) + JSON.stringify(S.data.pkgs.map(function (p) { return p.lines; })) + JSON.stringify(S.data.set.amprahRules || null) + JSON.stringify(S.data.amOvr); };
+      var snap = function () { return JSON.stringify(S.data.tx.map(function (t) { return t.alok; })) + JSON.stringify(S.data.pkgs.map(function (p) { return p.lines; })) + JSON.stringify(S.data.set.amprahRules || null) + JSON.stringify(S.data.amOvr) + JSON.stringify(S.data.set.poRules || null) + JSON.stringify(S.data.poOvr); };
       var before = snap();
       var rep = S.replaceRab(rab);
       var after = snap();
       setImp('<div class="note">Mengirim RAB ke Google Sheet… (' + rab.items.length + ' item, ' + (rab.ahs || []).length + ' AHS) — bisa 20–60 detik</div>');
       var payload = { rab: rab };
-      if (before !== after) { payload.data = { tx: S.data.tx, pkgs: S.data.pkgs, set: S.data.set, amOvr: S.data.amOvr }; payload.baseDataVer = Sync.vers.dataVer; }
+      if (before !== after) { payload.data = { tx: S.data.tx, pkgs: S.data.pkgs, set: S.data.set, amOvr: S.data.amOvr, poOvr: S.data.poOvr }; payload.baseDataVer = Sync.vers.dataVer; }
       return Sync.api('publishRab', payload).then(function (r) {
         Sync.vers.rabVer = r.rabVer; Sync.vers.dataVer = r.dataVer; Sync.saveState(); Sync.lastSync = new Date();
         setImp('<div class="note ok">RAB terbit: ' + r.written.items + ' item, ' + r.written.ahs + ' baris AHS, ' + r.written.harsat + ' harga dasar' + (payload.data ? ' · alokasi transaksi dipetakan ulang (' + rep.remapped + ')' : '') + '.</div>');
@@ -604,7 +617,7 @@
     }).then(function () { return Sync.load(true); });
   }
   function svConnect(url, code) {
-    var prevLocal = S.rab || S.data.tx.length ? { rab: S.rab, data: { tx: S.data.tx.slice(), pkgs: S.data.pkgs.slice(), set: Object.assign({}, S.data.set), amOvr: Object.assign({}, S.data.amOvr) } } : null;
+    var prevLocal = S.rab || S.data.tx.length ? { rab: S.rab, data: { tx: S.data.tx.slice(), pkgs: S.data.pkgs.slice(), set: Object.assign({}, S.data.set), amOvr: Object.assign({}, S.data.amOvr), poOvr: Object.assign({}, S.data.poOvr) } } : null;
     return Sync.connect(url, code).then(function () {
       Sync.start();
       return afterConnect(prevLocal);
@@ -661,26 +674,26 @@
       '<button class="btn" data-act="amTx">Lihat transaksi Amprah</button>' + (canEdit ? '<button class="btn danger" data-act="amUnlink">Lepas</button>' : '') + '</div>';
     return h + '</div>';
   }
-  function amprahRulesForm() {
+  /* Editor aturan pemetaan (dipakai Amprah & PO). cfg: {title, key, f, fLabel, list, rows, val, match, defaults, unit, hint} */
+  function rulesForm(cfg) {
     var canEdit = !Sync.enabled() || Sync.isAdmin();
-    var rules = JSON.parse(JSON.stringify(Amprah.rulesOf(S.data.set, S.rab)));
-    var isDefault = !Array.isArray(S.data.set.amprahRules);
-    var rows = Amprah.rows(S.data.set.amprahSrc);
-    var jenisList = Array.from(new Set(rows.map(function (r) { return r.jenis; }).filter(Boolean))).sort();
-    var m = openModal('<header><h2>Aturan pemetaan Amprah → item budget</h2><button class="x" data-close aria-label="Tutup">×</button></header><div class="body">' +
-      '<p class="small ink2" style="margin-bottom:8px">Aturan dicek dari atas; <b>aturan pertama yang cocok</b> dipakai. Jenis kosong = semua jenis. Kata kunci dicari di kolom Item & Remarks: <code>a|b</code> = salah satu, <code>a&amp;b</code> = keduanya. Item kosong = transaksi harus dipilih manual. ' +
-      (isDefault ? 'Saat ini memakai <b>aturan bawaan</b> (otomatis menyesuaikan RAB).' : 'Aturan sudah disesuaikan.') + ' Koreksi manual per baris selalu mengalahkan aturan.</p>' +
-      '<datalist id="dlJenis">' + jenisList.map(function (j) { return '<option value="' + esc(j) + '">'; }).join('') + '</datalist>' +
-      '<div class="tblwrap" style="max-height:52vh"><table><thead><tr><th>#</th><th>Jenis amprah</th><th>Kata kunci</th><th>Item budget</th><th class="num">Cocok</th><th></th></tr></thead><tbody id="rulesBody"></tbody></table></div>' +
+    var rules = JSON.parse(JSON.stringify(cfg.rules));
+    var isDefault = !Array.isArray(S.data.set[cfg.key]);
+    var m = openModal('<header><h2>' + esc(cfg.title) + '</h2><button class="x" data-close aria-label="Tutup">×</button></header><div class="body">' +
+      '<p class="small ink2" style="margin-bottom:8px">Aturan dicek dari atas; <b>aturan pertama yang cocok</b> dipakai. ' + esc(cfg.fLabel) + ' kosong = semua. ' + cfg.hint +
+      ' Kata kunci dicocokkan di awal kata: <code>a|b</code> = salah satu, <code>a&amp;b</code> = keduanya. Target kosong = harus dipilih manual. Target bisa item, <b>§ seksi</b> (dibagi sebanding budget), atau ▣ paket. ' +
+      (isDefault ? 'Saat ini memakai <b>aturan bawaan</b> (otomatis menyesuaikan RAB).' : 'Aturan sudah disesuaikan.') + ' Koreksi manual selalu mengalahkan aturan.</p>' +
+      '<datalist id="dlRuleF">' + cfg.list.map(function (j) { return '<option value="' + esc(j) + '">'; }).join('') + '</datalist>' +
+      '<div class="tblwrap" style="max-height:52vh"><table><thead><tr><th>#</th><th>' + esc(cfg.fLabel) + '</th><th>Kata kunci</th><th>Target budget</th><th class="num">Cocok</th><th></th></tr></thead><tbody id="rulesBody"></tbody></table></div>' +
       '<div class="sumline" id="rulesSum" style="justify-content:space-between"></div></div>' +
       '<footer><div class="bar" style="margin:0">' + (canEdit ? '<button class="btn" id="ruleAdd">+ Aturan</button><button class="btn" id="ruleReset">Kembalikan bawaan</button>' : '') + '</div>' +
       '<div class="bar" style="margin:0"><button class="btn" data-close>Tutup</button>' + (canEdit ? '<button class="btn pri" id="ruleSave">Simpan aturan</button>' : '') + '</div></footer>');
     var body = $('#rulesBody', m);
     function counts() {
       var c = rules.map(function () { return { n: 0, v: 0 }; }), none = { n: 0, v: 0 };
-      rows.forEach(function (r) {
-        for (var i = 0; i < rules.length; i++) if (Amprah.ruleMatch(rules[i], r)) { c[i].n++; c[i].v += r.nilai; return; }
-        none.n++; none.v += r.nilai;
+      cfg.rows.forEach(function (r) {
+        for (var i = 0; i < rules.length; i++) if (cfg.match(rules[i], r)) { c[i].n++; c[i].v += cfg.val(r); return; }
+        none.n++; none.v += cfg.val(r);
       });
       return { c: c, none: none };
     }
@@ -689,14 +702,14 @@
       body.innerHTML = rules.map(function (r, i) {
         var ti = r.t ? targetInfo(r.t) : null;
         return '<tr><td class="muted">' + (i + 1) + '</td>' +
-          '<td><input type="text" list="dlJenis" data-f="jenis" data-i="' + i + '" value="' + esc(r.jenis || '') + '" style="width:150px"' + (canEdit ? '' : ' disabled') + '></td>' +
+          '<td><input type="text" list="dlRuleF" data-f="' + cfg.f + '" data-i="' + i + '" value="' + esc(r[cfg.f] || '') + '" style="width:150px"' + (canEdit ? '' : ' disabled') + '></td>' +
           '<td><input type="text" data-f="kata" data-i="' + i + '" value="' + esc(r.kata || '') + '" style="width:190px"' + (canEdit ? '' : ' disabled') + '></td>' +
-          '<td style="min-width:240px"><div class="picker">' + (ti ? '<b>' + esc(ti.nama) + '</b><div class="subtxt">' + esc(ti.sub) + '</div>' : '<span class="pill warn">pilih manual per baris</span>') +
-          (canEdit ? '<div style="margin-top:4px"><input type="search" class="rpick" data-i="' + i + '" placeholder="Ganti item… (ketik)" style="width:100%"></div>' + (r.t ? '<button class="lnk small" data-clr="' + i + '">kosongkan</button>' : '') : '') + '</div></td>' +
+          '<td style="min-width:240px"><div class="picker">' + (ti ? '<b>' + esc(ti.nama) + '</b><div class="subtxt">' + esc(ti.sub) + '</div>' : '<span class="pill warn">pilih manual</span>' + (r.note ? '<div class="subtxt">' + esc(r.note) + '</div>' : '')) +
+          (canEdit ? '<div style="margin-top:4px"><input type="search" class="rpick" data-i="' + i + '" placeholder="Ganti target… (ketik item / seksi / paket)" style="width:100%"></div>' + (r.t ? '<button class="lnk small" data-clr="' + i + '">kosongkan</button>' : '') : '') + '</div></td>' +
           '<td class="num">' + cc.c[i].n + '<div class="subtxt">' + rpS(cc.c[i].v) + '</div></td>' +
           '<td style="white-space:nowrap">' + (canEdit ? '<button class="btn sm" data-up="' + i + '" title="Naik">↑</button> <button class="btn sm" data-dn="' + i + '" title="Turun">↓</button> <button class="x" data-del="' + i + '" aria-label="Hapus aturan">×</button>' : '') + '</td></tr>';
       }).join('');
-      $('#rulesSum', m).innerHTML = '<span>' + rows.length + ' baris Amprah</span><span>' + (cc.none.n ? '<span class="pill warn">' + cc.none.n + ' baris tidak cocok aturan mana pun · ' + rp(cc.none.v) + '</span>' : '<span class="pill ok">Semua baris cocok dengan aturan</span>') + '</span>';
+      $('#rulesSum', m).innerHTML = '<span>' + cfg.rows.length + ' ' + esc(cfg.unit) + '</span><span>' + (cc.none.n ? '<span class="pill warn">' + cc.none.n + ' ' + esc(cfg.unit) + ' tidak cocok aturan mana pun · ' + rp(cc.none.v) + '</span>' : '<span class="pill ok">Semua cocok dengan aturan</span>') + '</span>';
       $$('input[data-f]', body).forEach(function (inp) { inp.addEventListener('change', function () { rules[+inp.dataset.i][inp.dataset.f] = inp.value.trim(); draw(); }); });
       $$('.rpick', body).forEach(function (inp) { attachPicker(inp, { pkgs: true }, function (r) { rules[+inp.dataset.i].t = r.key; draw(); return false; }); });
       $$('[data-clr]', body).forEach(function (b) { b.addEventListener('click', function () { rules[+b.dataset.clr].t = ''; draw(); }); });
@@ -706,13 +719,102 @@
     }
     draw();
     if (!canEdit) return;
-    $('#ruleAdd', m).addEventListener('click', function () { rules.push({ jenis: '', kata: '', t: '' }); draw(); var ins = $$('input[data-f="jenis"]', body); ins[ins.length - 1].focus(); });
-    $('#ruleReset', m).addEventListener('click', function () { if (confirm('Ganti semua aturan dengan aturan bawaan?')) { rules = Amprah.defaultRules(S.rab); draw(); } });
+    $('#ruleAdd', m).addEventListener('click', function () { var r = { kata: '', t: '' }; r[cfg.f] = ''; rules.push(r); draw(); var ins = $$('input[data-f="' + cfg.f + '"]', body); ins[ins.length - 1].focus(); });
+    $('#ruleReset', m).addEventListener('click', function () { if (confirm('Ganti semua aturan dengan aturan bawaan?')) { rules = cfg.defaults(); draw(); } });
     $('#ruleSave', m).addEventListener('click', function () {
-      var clean = rules.map(function (r) { return { jenis: (r.jenis || '').toUpperCase(), kata: (r.kata || '').toLowerCase(), t: r.t || '' }; });
-      if (!S.saveSetting('amprahRules', clean)) return;
+      var clean = rules.map(function (r) { var o = { kata: (r.kata || '').toLowerCase(), t: r.t || '' }; o[cfg.f] = (r[cfg.f] || '').toUpperCase(); if (r.note) o.note = r.note; return o; });
+      if (!S.saveSetting(cfg.key, clean)) return;
       closeModal(); render(); toast('Aturan pemetaan disimpan');
     });
+  }
+  function amprahRulesForm() {
+    var rows = Amprah.rows(S.data.set.amprahSrc);
+    rulesForm({ title: 'Aturan pemetaan Amprah → budget', key: 'amprahRules', f: 'jenis', fLabel: 'Jenis amprah', unit: 'baris Amprah',
+      hint: 'Kata kunci dicari di kolom Item & Remarks.', rules: Amprah.rulesOf(S.data.set, S.rab),
+      list: Array.from(new Set(rows.map(function (r) { return r.jenis; }).filter(Boolean))).sort(),
+      rows: rows, val: function (r) { return r.nilai; }, match: function (rule, r) { return Amprah.ruleMatch(rule, r); },
+      defaults: function () { return Amprah.defaultRules(S.rab); } });
+  }
+  function poRulesForm() {
+    var pp = Po.parsed(S.poSrc()), rows = [];
+    if (pp) pp.pos.forEach(function (po) { po.lines.forEach(function (l) { rows.push({ l: l, po: po }); }); });
+    rulesForm({ title: 'Aturan pemetaan baris PO → budget', key: 'poRules', f: 'cat', fLabel: 'Kategori PO', unit: 'baris PO',
+      hint: 'Kategori = kolom T di sheet PO; kata kunci dicari di deskripsi baris & nama vendor.', rules: Po.rulesOf(S.data.set, S.rab),
+      list: Array.from(new Set(rows.map(function (r) { return r.l.cat || r.po.cat; }).filter(Boolean))).sort(),
+      rows: rows, val: function (r) { return r.l.nilai; }, match: function (rule, r) { return Po.ruleMatch(rule, r.l, r.po); },
+      defaults: function () { return Po.defaultRules(S.rab); } });
+  }
+
+  /* ---------- Integrasi PO (SUMMARY COST) ---------- */
+  function poStats() {
+    var tx = S.allTx().filter(function (t) { return t.src === 'po'; });
+    var st = { n: 0, dpp: 0, paid: 0, paidGross: 0, hut: 0, hutN: 0, unalloc: 0, unallocN: 0, ovr: 0, lunas: 0, payOnly: 0 };
+    tx.forEach(function (t) {
+      if (t.payOnly) { st.payOnly += t.nilai; } else { st.n++; st.dpp += t.nilai; st.paid += t.bayar; st.paidGross += t.paidGross; if (t.hutNet > 0) { st.hut += t.hutNet; st.hutN++; } if (t.status === 'Lunas') st.lunas++; }
+      var a = t.alok.reduce(function (acc, x) { return acc + (+x.v || 0); }, 0);
+      if (t.nilai - a >= 1) { st.unalloc += t.nilai - a; st.unallocN++; }
+      if (t.ovr || t.ovrTax) st.ovr++;
+    });
+    return st;
+  }
+  function poDupes() {
+    // transaksi PO manual yang nomornya sama dengan PO di sheet → kemungkinan terhitung dua kali
+    var keys = {};
+    S.allTx().forEach(function (t) { if (t.src === 'po' && !t.payOnly) keys[Po.poKey(t.poCode)] = t.poCode; });
+    return S.data.tx.filter(function (t) { return !t.batal && t.jenis === 'PO' && keys[Po.poKey(t.no)]; });
+  }
+  function poDashNote() {
+    if (!S.poSrc()) return '';
+    var st = poStats(); if (!st.n) return Po.error ? '<div class="note crit">PO: ' + esc(Po.error) + '</div>' : '';
+    var d = poDupes();
+    return '<div class="note' + (st.unallocN ? '' : ' ok') + '">PO (SUMMARY COST, tanpa pajak): <b>' + st.n + '</b> PO · komitmen <b>' + rp(st.dpp) + '</b> · terbayar <b>' + rp(st.paid) + '</b>' +
+      (st.hut ? ' · tagihan belum dibayar <b>' + rp(st.hut) + '</b>' : '') +
+      (st.unallocN ? ' · <b>' + rp(st.unalloc) + '</b> belum dialokasikan (' + st.unallocN + ' PO)' : '') +
+      ' · <button class="lnk" data-act="poTx">Lihat</button>' +
+      (d.length ? '<br><span class="pill crit">' + d.length + ' transaksi PO manual punya nomor yang sama dengan PO di sheet — kemungkinan terhitung dua kali</span>' : '') +
+      (Po.error ? ' · <span class="pill warn">' + esc(Po.error) + '</span>' : '') + '</div>';
+  }
+  function poCard() {
+    var srv = Sync.enabled(), src = S.poSrc(), canEdit = !srv || Sync.isAdmin();
+    var badge = src ? (Po.loading ? '<span class="badge busy">Memuat…</span>' : Po.error ? '<span class="badge snap">Data terakhir</span>' : '<span class="badge live">Tersambung</span>') : '<span class="badge">Belum diatur</span>';
+    var h = '<div class="card" style="margin-top:12px"><div class="hd"><h2>Integrasi PO (SUMMARY COST)</h2>' + badge + '</div>' +
+      '<p class="small ink2" style="margin-bottom:8px">Tab <b>PO</b> = komitmen biaya, <b>PO TERBAYAR</b> = actual, <b>HUTANG</b> = tagihan belum dibayar. Semua dihitung <b>tanpa pajak</b> (DPP): pembayaran yang termasuk PPN / dipotong PPh dikonversi per PO. ' +
+      'Setiap baris PO dialokasikan ke item / seksi / paket budget lewat aturan kategori + kata kunci.</p>';
+    if (!src) {
+      if (srv) h += canEdit ? '<div class="form"><label class="wide">Link Google Sheet SUMMARY COST<input type="text" id="poLink" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label>' +
+        '<label style="justify-content:flex-end"><button class="btn pri" data-act="poSave">Sambungkan</button></label></div>' +
+        '<p class="small muted" style="margin-top:6px">Sheet <b>tidak perlu dibagikan</b>: dibaca oleh server Apps Script atas nama akun Anda (pemilik sheet), lalu hanya diberikan ke pengguna yang punya kode akses.</p>'
+        : '<p class="small muted">Belum diatur oleh Admin.</p>';
+      else h += '<label class="drop" id="poDrop"><input type="file" id="fPo" accept=".xlsx,.xlsm" class="hide"><b>Upload file SUMMARY COST (.xlsx)</b><br><span class="small">mode lokal · untuk membaca otomatis dari Google Sheet privat, sambungkan ke server terlebih dulu</span></label>';
+      return h + '</div>';
+    }
+    var st = poStats(), c = Po.cache, d = poDupes();
+    h += '<div class="list-row"><span class="ink2">Sumber</span><span class="small" style="text-align:right;word-break:break-all">' + esc(c && c.title || '') + (srv && src.id ? ' · …' + esc(src.id.slice(-10)) : '') + (c ? ' · dibaca ' + new Date(c.fetchedAt).toLocaleString('id-ID') + (c.cached ? ' (cache server)' : '') : '') + '</span></div>' +
+      '<div class="list-row"><span class="ink2">Komitmen (DPP)</span><span><b>' + rp(st.dpp) + '</b> · ' + st.n + ' PO · ' + st.lunas + ' lunas</span></div>' +
+      '<div class="list-row"><span class="ink2">Terbayar tanpa pajak</span><span><b>' + rp(st.paid) + '</b> <span class="muted small">(bruto ' + rp(st.paidGross) + ')</span></span></div>' +
+      '<div class="list-row"><span class="ink2">Tagihan belum dibayar</span><span>' + (st.hutN ? rp(st.hut) + ' · ' + st.hutN + ' PO' : '—') + '</span></div>' +
+      (st.payOnly ? '<div class="list-row"><span class="ink2">Pembayaran tanpa PO</span><span>' + rp(st.payOnly) + '</span></div>' : '') +
+      '<div class="list-row"><span class="ink2">Belum dialokasikan</span><span>' + (st.unallocN ? '<span class="pill warn">' + rp(st.unalloc) + ' · ' + st.unallocN + ' PO</span>' : '<span class="pill ok">Semua teralokasi</span>') + '</span></div>' +
+      '<div class="list-row"><span class="ink2">Koreksi manual</span><span>' + st.ovr + ' PO</span></div>' +
+      (d.length ? '<div class="note crit" style="margin-top:8px">' + d.length + ' transaksi PO yang dicatat manual punya nomor yang sama dengan PO di sheet (' + d.slice(0, 5).map(function (t) { return esc(t.no); }).join(', ') + '). Batalkan/hapus yang manual agar tidak terhitung dua kali.</div>' : '') +
+      (Po.error ? '<div class="note crit" style="margin-top:8px">' + esc(Po.error) + '</div>' : '') +
+      '<div class="bar" style="margin:10px 0 0">' + (srv ? '<button class="btn" data-act="poRefresh">Muat ulang dari sheet</button>' : '<label class="btn">Upload ulang .xlsx<input type="file" id="fPo" accept=".xlsx,.xlsm" class="hide"></label>') +
+      '<button class="btn" data-act="poRules">Aturan pemetaan…</button><button class="btn" data-act="poTx">Lihat transaksi PO</button>' + (canEdit ? '<button class="btn danger" data-act="poUnlink">Lepas</button>' : '') + '</div>';
+    return h + '</div>';
+  }
+  function poNote(t) {
+    var taxSel = '<select id="ftax"' + (Sync.canWrite() ? '' : ' disabled') + '>' + [['auto', 'Otomatis: ' + (Po.TAX_LABEL[t.taxAuto] || t.taxAuto)], ['none', Po.TAX_LABEL.none], ['ppn', Po.TAX_LABEL.ppn], ['ppn-pph2', Po.TAX_LABEL['ppn-pph2']], ['pph2', Po.TAX_LABEL.pph2]]
+      .map(function (o) { return '<option value="' + o[0] + '"' + ((t.ovrTax ? t.taxMode : 'auto') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>';
+    if (t.payOnly) return '<div class="note">Dari tab <b>PO TERBAYAR</b>: pembayaran yang tidak menunjuk PO mana pun. Pilih item budget-nya di bawah.</div>';
+    var lines = t.poLines.map(function (l) { var ti = l.t ? targetInfo(l.t) : null; return '<tr><td>' + esc(l.desc) + '</td><td class="num">' + (l.qty ? nf2.format(l.qty) + ' ' + esc(l.sat) : '') + '</td><td class="num">' + (l.harga ? rp(l.harga) : '') + '</td><td class="num">' + rp(l.nilai) + '</td><td class="small">' + (ti ? esc(ti.nama) : '<span class="pill warn">—</span>') + '</td></tr>'; }).join('');
+    var pays = t.pays.map(function (x) { return '<tr><td>' + dateLbl(x.tgl) + '</td><td>' + esc(x.bkk) + '</td><td>' + esc(x.ref) + '</td><td class="num">' + rp(x.nilai) + '</td><td class="num">' + rp(x.nilai / t.taxF) + '</td></tr>'; }).join('');
+    var huts = t.huts.map(function (x) { return '<tr><td>' + dateLbl(x.tgl) + '</td><td>' + esc(x.due) + '</td><td>' + esc(x.kw || x.ref) + '</td><td class="num">' + rp(x.sisa) + '</td><td class="num">' + rp(x.sisa / t.taxF) + '</td></tr>'; }).join('');
+    return '<div class="note' + (t.alok.length ? ' ok' : '') + '">Dari sheet <b>SUMMARY COST</b> · PO <b>' + esc(t.poCode) + '</b>' + (t.poPr ? ' · ' + esc(t.poPr) : '') + ' · kategori <b>' + esc(t.poCat || '—') + '</b> · <span class="pill ' + (t.status === 'Lunas' ? 'ok' : t.status === 'Terbit' ? '' : 'warn') + '">' + esc(t.status) + '</span>' +
+      '<br><span class="small">Data PO diubah di sheet. Di sini Anda hanya mengoreksi <b>alokasi ke budget</b> dan <b>mode pajak</b>. Alokasi: ' + (t.ovr ? 'koreksi manual' + (t.ovrBy ? ' (oleh ' + esc(t.ovrBy) + ')' : '') : 'otomatis per baris dari aturan') + '.</span>' +
+      '<div class="bar" style="margin:8px 0 0"><span class="small">Pajak dalam pembayaran/tagihan:</span> ' + taxSel + ' <span class="small ink2" id="ftaxInfo">Terbayar ' + rp(t.paidGross) + ' bruto → <b>' + rp(t.bayar) + '</b> tanpa pajak</span></div></div>' +
+      '<details style="margin-bottom:10px"><summary class="small"><b>' + t.poLines.length + ' baris PO</b> · DPP ' + rp(t.nilai) + '</summary><div class="tblwrap" style="max-height:260px;margin-top:6px"><table><thead><tr><th>Deskripsi</th><th class="num">Qty</th><th class="num">Harga</th><th class="num">Nilai</th><th>Target (aturan)</th></tr></thead><tbody>' + lines + '</tbody></table></div></details>' +
+      (pays ? '<details style="margin-bottom:10px"><summary class="small"><b>' + t.pays.length + ' pembayaran</b> · ' + rp(t.paidGross) + ' bruto</summary><div class="tblwrap" style="max-height:200px;margin-top:6px"><table><thead><tr><th>Tanggal</th><th>BKK</th><th>Ref</th><th class="num">Bruto</th><th class="num">Tanpa pajak</th></tr></thead><tbody>' + pays + '</tbody></table></div></details>' : '') +
+      (huts ? '<details style="margin-bottom:10px"><summary class="small"><b>Tagihan belum dibayar</b> · ' + rp(t.hutGross) + ' bruto</summary><div class="tblwrap" style="max-height:200px;margin-top:6px"><table><thead><tr><th>Diterima</th><th>Jatuh tempo</th><th>Kwitansi</th><th class="num">Bruto</th><th class="num">Tanpa pajak</th></tr></thead><tbody>' + huts + '</tbody></table></div></details>' : '');
   }
 
   function installCard() {
@@ -798,6 +900,16 @@
       if (!q || p.nama.toLowerCase().indexOf(q) >= 0) out.push({ key: 'P:' + p.id, label: '▣ ' + p.nama, sub: 'Paket · ' + C.pkgs[p.id].lines.length + ' item · budget ' + rpS(C.pkgs[p.id].budget) + ' · sisa ' + rpS(C.pkgs[p.id].budget - C.pkgs[p.id].real) });
     });
     if (!q) return out.slice(0, 30);
+    if (opts.pkgs) {
+      var seen = {}, nsec = 0;
+      S.rab.items.forEach(function (it) {
+        var k = K.secKey(it.g, it.sec);
+        if (seen[k] || nsec >= 8) return; seen[k] = 1;
+        if ((it.sec + ' ' + grpLabel(it.g)).toLowerCase().indexOf(q) < 0) return;
+        var ti = targetInfo(k); nsec++;
+        out.push({ key: k, label: ti.nama, sub: ti.sub + ' · budget ' + rpS(ti.budget) + ' · sisa ' + rpS(ti.budget - ti.real) });
+      });
+    }
     var words = q.split(/\s+/);
     for (var i = 0; i < S.rab.items.length && out.length < 60; i++) {
       var it = S.rab.items[i];
@@ -849,11 +961,11 @@
   /* --- Form transaksi --- */
   function txForm(tx, preset) {
     if (!S.rab) { alert('Impor RAB dulu di menu Data & Backup.'); go('data'); return; }
-    var isNew = !tx, isAm = !!(tx && tx.src === 'amprah');
+    var isNew = !tx, isAm = !!(tx && tx.src === 'amprah'), isPo = !!(tx && tx.src === 'po'), isExt = isAm || isPo;
     tx = tx ? JSON.parse(JSON.stringify(tx)) : { id: S.nextId('t'), jenis: 'PO', kat: 'po-mat', no: '', tgl: today(), pihak: '', uraian: '', nilai: 0, bayar: 0, alok: [], created: Date.now() };
     if (preset) { if (preset.jenis) { tx.jenis = preset.jenis; tx.kat = K.KAT[preset.jenis][0].id; } (preset.targets || []).forEach(function (t) { tx.alok.push({ t: t, k: K.KAT_BY[tx.kat].k, v: 0 }); }); }
-    var m = openModal('<header><h2>' + (isAm ? 'Transaksi Amprah (kas kecil)' : isNew ? 'Transaksi baru' : 'Ubah transaksi') + '</h2><button class="x" data-close aria-label="Tutup">×</button></header>' +
-      '<div class="body">' + (isAm ? amprahNote(tx) : '') + '<div class="bar"><div class="seg" id="fj"><button data-v="PO">Belanja dengan PO</button><button data-v="NP">Non-PO (obname, material, bayar orang, lain-lain)</button></div></div>' +
+    var m = openModal('<header><h2>' + (isAm ? 'Transaksi Amprah (kas kecil)' : isPo ? (tx.payOnly ? 'Pembayaran tanpa PO' : 'PO ' + esc(tx.poCode) + ' — ' + esc(tx.pihak)) : isNew ? 'Transaksi baru' : 'Ubah transaksi') + '</h2><button class="x" data-close aria-label="Tutup">×</button></header>' +
+      '<div class="body">' + (isAm ? amprahNote(tx) : isPo ? poNote(tx) : '') + '<div class="bar"><div class="seg" id="fj"><button data-v="PO">Belanja dengan PO</button><button data-v="NP">Non-PO (obname, material, bayar orang, lain-lain)</button></div></div>' +
       '<div class="form">' +
       '<label>Kategori<select id="fk"></select></label>' +
       '<label><span id="lblNo">No. PO</span><input type="text" id="fno"></label>' +
@@ -876,7 +988,7 @@
       '<div class="tblwrap" style="max-height:300px;margin-top:8px"><table><thead><tr><th>Material / upah / alat</th><th class="num">Qty</th><th>Sat</th><th class="num">Harga satuan</th><th class="num">Harga RAB</th><th class="num">Selisih</th><th class="num">Jumlah</th><th></th></tr></thead><tbody id="frinc"></tbody></table></div>' +
       '<div class="bar" style="margin-top:8px;justify-content:space-between"><button class="btn sm" id="frset" type="button">Jadikan total rincian sebagai nilai transaksi</button><div class="sumline" id="frsum"></div></div></div>' +
       '</div>' +
-      '<footer><div>' + (isAm ? (tx.ovr ? '<button class="btn w" id="freset">Kembalikan ke aturan otomatis</button>' : '') : isNew ? '' : '<button class="btn danger w" id="fdel">Hapus transaksi</button>') + '</div><div class="bar" style="margin:0"><button class="btn" data-close>Batal</button><button class="btn pri w" id="fsave">Simpan</button></div></footer>');
+      '<footer><div>' + (isExt ? (tx.ovr || tx.ovrTax ? '<button class="btn w" id="freset">Kembalikan ke aturan otomatis</button>' : '') : isNew ? '' : '<button class="btn danger w" id="fdel">Hapus transaksi</button>') + '</div><div class="bar" style="margin:0"><button class="btn" data-close>Batal</button><button class="btn pri w" id="fsave">Simpan</button></div></footer>');
 
     var fj = $('#fj', m), fk = $('#fk', m);
     function setJenis(j) {
@@ -1005,8 +1117,16 @@
     } else $('#frpick', m).placeholder = 'Impor ulang RAB untuk memuat daftar harga dasar (HARSAT)';
     drawRinc();
 
-    if (isAm) {
-      // data berasal dari sheet Amprah: hanya alokasi & rincian harga yang bisa dikoreksi di sini
+    var alok0 = JSON.stringify(tx.alok);
+    if (isPo) {
+      $('#frpick', m).closest('.alloc').classList.add('hide'); // rincian harga diambil dari baris PO
+      if ($('#ftax', m)) $('#ftax', m).addEventListener('change', function () {
+        var mode = this.value === 'auto' ? tx.taxAuto : this.value, f = mode === 'sheet' ? tx.taxF : (Po.TAXF[mode] || 1);
+        $('#ftaxInfo', m).innerHTML = 'Terbayar ' + rp(tx.paidGross) + ' bruto → <b>' + rp(tx.paidGross / f) + '</b> tanpa pajak';
+      });
+    }
+    if (isExt) {
+      // data berasal dari sheet: hanya alokasi (dan rincian harga / pajak) yang bisa dikoreksi di sini
       ['#fno', '#ftgl', '#fpihak', '#furaian', '#fnilai', '#fbayar', '#fket', '#fk'].forEach(function (q) { $(q, m).disabled = true; });
       $$('button', fj).forEach(function (b) { b.disabled = true; });
       ['#flunas', '#frset'].forEach(function (q) { $(q, m).classList.add('hide'); });
@@ -1014,11 +1134,22 @@
       $('#fsave', m).textContent = 'Simpan koreksi';
       if ($('#freset', m)) $('#freset', m).addEventListener('click', function () {
         if (!confirm('Hapus koreksi manual dan kembali ke alokasi otomatis dari aturan?')) return;
-        if (!S.saveAmprahOvr(tx.key, null)) return; closeModal(); render(); toast('Kembali ke aturan otomatis');
+        if (!(isPo ? S.savePoOvr(tx.key, null) : S.saveAmprahOvr(tx.key, null))) return; closeModal(); render(); toast('Kembali ke aturan otomatis');
       });
     }
     $('#fsave', m).addEventListener('click', function () {
       tx.rinc = tx.rinc.filter(function (r) { return r.nama && (+r.qty || +r.harga); });
+      if (isPo) {
+        var pal = tx.alok.filter(function (a) { return +a.v; });
+        var psa = pal.reduce(function (acc, x) { return acc + x.v; }, 0);
+        if (psa - tx.nilai >= 1 && !confirm('Total alokasi (' + rp(psa) + ') melebihi nilai PO (' + rp(tx.nilai) + '). Tetap simpan?')) return;
+        var tax = $('#ftax', m) ? $('#ftax', m).value : 'auto';
+        var touched = tx.ovr || JSON.stringify(tx.alok) !== alok0;
+        if (!touched && tax === 'auto') { if (tx.ovr || tx.ovrTax) S.savePoOvr(tx.key, null); closeModal(); render(); return; }
+        if (!S.savePoOvr(tx.key, { alok: touched ? pal : null, tax: tax })) return;
+        closeModal(); render(); toast('Koreksi PO disimpan');
+        return;
+      }
       if (isAm) {
         var al = tx.alok.filter(function (a) { return +a.v; });
         var sa = al.reduce(function (s, x) { return s + x.v; }, 0);
@@ -1043,7 +1174,7 @@
       if (!confirm('Hapus transaksi ' + (tx.no || '') + ' (' + rp(tx.nilai) + ')? Tidak bisa dibatalkan — centang "Batal" bila hanya ingin membatalkan.')) return;
       if (!S.deleteTx(tx.id)) return; closeModal(); render(); toast('Transaksi dihapus');
     });
-    setTimeout(function () { (isAm ? $('#fpick', m) : isNew ? $('#fno', m) : $('#fnilai', m)).focus(); }, 30);
+    setTimeout(function () { (isExt ? $('#fpick', m) : isNew ? $('#fno', m) : $('#fnilai', m)).focus(); }, 30);
   }
   function amprahNote(t) {
     var rules = Amprah.rulesOf(S.data.set, S.rab), r = t.rule >= 0 ? rules[t.rule] : null;
@@ -1166,7 +1297,7 @@
       case 'goTx': go('tx'); break;
       case 'newTx': txForm(); break;
       case 'editTx': { var t = S.allTx().find(function (x) { return x.id === id; }); if (t) txForm(t); break; }
-      case 'txUnalloc': ui.t = { q: '', j: '', k: '', m: '', unalloc: true }; go('tx'); break;
+      case 'txUnalloc': ui.t = { q: '', j: '', k: '', m: '', s: '', unalloc: true }; go('tx'); break;
       case 'clrUnalloc': ui.t.unalloc = false; renderTx(); break;
       case 'openGroup': ui.b.q = ''; ui.b.f = ''; ui.b.g = id; ui.b.open['g:' + id] = true; go('budget'); break;
       case 'budgetWarn': ui.b.q = ''; ui.b.g = ''; ui.b.f = 'warn'; go('budget'); break;
@@ -1194,7 +1325,21 @@
       }
       case 'amRefresh': Amprah.refresh(S.data.set.amprahSrc).then(function (c) { if (c) toast('Amprah dimuat: ' + c.rows.length + ' baris'); }); break;
       case 'amRules': amprahRulesForm(); break;
-      case 'amTx': ui.t = { q: '', j: '', k: 'np-amprah', m: '' }; go('tx'); break;
+      case 'amTx': ui.t = { q: '', j: '', k: '', m: '', s: 'amprah' }; go('tx'); break;
+      case 'poTx': ui.t = { q: '', j: '', k: '', m: '', s: 'po' }; go('tx'); break;
+      case 'poRules': poRulesForm(); break;
+      case 'poSave': {
+        var pid = Amprah.parseId($('#poLink').value);
+        if (!pid) { alert('Link Google Sheet tidak dikenali. Tempel link lengkap (…/spreadsheets/d/…/edit).'); break; }
+        if (!S.saveSetting('poSrc', { id: pid })) break;
+        render(); toast('Membaca SUMMARY COST lewat server…');
+        Sync.flush().then(function () { return Po.refresh(true); }).then(function (d) { if (d) toast('PO dimuat: ' + d.po.length + ' baris'); });
+        break;
+      }
+      case 'poRefresh': Po.refresh(true).then(function (d) { if (d) toast('PO dimuat ulang'); }); break;
+      case 'poUnlink':
+        if (confirm('Lepas integrasi PO? Transaksi dari SUMMARY COST tidak lagi dihitung. Aturan & koreksi tetap tersimpan.')) { if (Sync.enabled()) S.saveSetting('poSrc', null); Po.clearCache(); render(); }
+        break;
       case 'amUnlink':
         if (confirm('Lepas integrasi Amprah? Transaksi Amprah tidak lagi dihitung. Aturan & koreksi tetap tersimpan bila disambungkan lagi.')) { S.saveSetting('amprahSrc', null); Amprah.clearCache(); render(); }
         break;
@@ -1261,8 +1406,20 @@
   }
   setInterval(function () { if (!document.hidden) amprahTick(); }, 60 * 1000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) amprahTick(); });
+  Po.onChange = Amprah.onChange;
+  var poSeen = null;
+  function poTick(force) {
+    if (!Sync.enabled()) return;
+    var src = S.data.set.poSrc;
+    if (!src || !src.id) return;
+    var changed = poSeen !== src.id; poSeen = src.id;
+    var age = Po.cache && Po.cache.id === src.id ? Date.now() - new Date(Po.cache.fetchedAt).getTime() : Infinity;
+    if (force || changed || age > 5 * 60 * 1000) Po.refresh(false);
+  }
+  setInterval(function () { if (!document.hidden) poTick(); }, 60 * 1000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poTick(); });
   Sync.onChange = function (what) {
-    if (what === 'data') amprahTick();
+    if (what === 'data') { amprahTick(); poTick(); }
     if (what === 'status') { updateBadge(); if (ui.tab === 'data' && !$('#modalRoot').innerHTML) renderDataSafe(); return; }
     if ($('#modalRoot').innerHTML) { recompute(); updateBadge(); return; } // jangan ganggu form yang sedang dibuka
     render();
@@ -1292,6 +1449,13 @@
   }
 
   amprahTick();
+  poTick();
+  // mode lokal: upload file SUMMARY COST
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'fPo' && e.target.files[0]) {
+      Po.loadFile(e.target.files[0]).then(function (raw) { toast('SUMMARY COST dibaca: ' + raw.po.length + ' baris PO'); }, function (er) { alert('Gagal membaca file: ' + er.message); });
+    }
+  });
 
   /* ---------- pasang sebagai aplikasi (PWA) ---------- */
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {

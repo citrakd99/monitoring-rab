@@ -78,7 +78,7 @@
         if (!flushed) return false; // masih ada antrean (offline) → jangan timpa data lokal
         return self.api('load', { rabVer: force ? '' : (Store.rab ? self.vers.rabVer : '') }).then(function (d) {
           if (d.rab !== undefined) { Store.rab = d.rab; Store.saveRab(); }
-          Store.data = { tx: d.data.tx, pkgs: d.data.pkgs, set: d.data.set || {}, amOvr: d.data.amOvr || {}, seq: (Store.data && Store.data.seq) || 1 };
+          Store.data = { tx: d.data.tx, pkgs: d.data.pkgs, set: d.data.set || {}, amOvr: d.data.amOvr || {}, poOvr: d.data.poOvr || {}, seq: (Store.data && Store.data.seq) || 1 };
           Store.save(true);
           self.vers = { rabVer: d.rabVer, dataVer: d.dataVer }; self.needLoad = false; self.saveState();
           self.lastSync = new Date();
@@ -97,7 +97,7 @@
       for (var i = this.outbox.length - 1; i >= 0; i--) {
         var o = this.outbox[i];
         if (o.sending || o.oid !== id) continue;
-        if (o.action === action && ['saveTx', 'savePkg', 'saveSetting', 'saveAmprahOvr'].indexOf(action) >= 0) {
+        if (o.action === action && ['saveTx', 'savePkg', 'saveSetting', 'saveAmprahOvr', 'savePoOvr'].indexOf(action) >= 0) {
           var keepPrev = o.payload.prevUpdated; o.payload = payload; if (keepPrev !== undefined) o.payload.prevUpdated = keepPrev;
           this.saveState(); this.flush(); return;
         }

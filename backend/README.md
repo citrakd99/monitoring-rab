@@ -10,6 +10,7 @@ admin cukup "menerbitkan" RAB sekali per revisi dari webapp, lalu semua pengguna
 | `Paket`, `Paket_Item` | paket pekerjaan dan anggotanya | Admin & Input |
 | `Setting` | link sheet Amprah, aturan pemetaan Amprah | Admin |
 | `Amprah_Koreksi` | koreksi alokasi per baris Amprah | Admin & Input |
+| `PO_Koreksi` | koreksi alokasi / mode pajak per PO (SUMMARY COST) | Admin & Input |
 | `Log` | jejak siapa mengubah apa | otomatis |
 
 Isi tab boleh dibaca/difilter langsung di Google Sheets. **Jangan mengubah urutan kolom atau nama tab.**
@@ -56,8 +57,14 @@ Isi tab boleh dibaca/difilter langsung di Google Sheets. **Jangan mengubah uruta
 - Bentrok: bila dua orang mengubah **transaksi yang sama**, simpanan kedua ditolak (`CONFLICT`), pengguna diberi tahu
   dan datanya dimuat ulang. Semua tulis memakai `LockService` sehingga tidak saling menimpa.
 
-Tab `Setting` dan `Amprah_Koreksi` dibuat otomatis saat pertama dipakai — database lama cukup ditempel kode baru +
+Tab `Setting`, `Amprah_Koreksi`, dan `PO_Koreksi` dibuat otomatis saat pertama dipakai — database lama cukup ditempel kode baru +
 *New version*, tidak perlu menjalankan `setup` ulang.
+
+### Izin membaca sheet SUMMARY COST
+Aksi `loadPo` membuka spreadsheet lain dengan `SpreadsheetApp.openById`, jadi setelah menempel kode versi 1.2.0
+Google akan meminta izin baru. Di editor Apps Script jalankan sekali fungsi **`setup`** (atau fungsi apa saja) →
+*Review permissions* → izinkan, lalu **Manage deployments → New version**. Sheet SUMMARY COST harus dimiliki atau
+dibagikan ke akun yang men-deploy script; sheet tidak perlu dibagikan ke publik.
 
 ## Mengubah kode backend
 1. Ubah `Db.gs` / `Code.gs` / `Setup.gs`, lalu buat ulang file gabungan: `node backend/build.js` (uji memeriksa ini).
@@ -88,3 +95,5 @@ POST `Content-Type: text/plain`, body `{"code","action","payload"}`.
 | `getLog` | admin | `{limit?}` | jejak audit |
 | `saveSetting` | admin | `{key:'amprahSrc'\|'amprahRules', value}` | pengaturan (JSON) |
 | `saveAmprahOvr` | admin, input | `{key, ovr:{alok,rinc}\|null}` | koreksi alokasi satu baris Amprah (null = kembali ke aturan) |
+| `loadPo` | semua | `{force?}` | baca tab PO / PO TERBAYAR / HUTANG dari sheet SUMMARY COST (privat, atas nama pemilik script; cache 5 menit) |
+| `savePoOvr` | admin, input | `{key, ovr:{alok\|null, tax}\|null}` | koreksi alokasi / mode pajak satu PO |

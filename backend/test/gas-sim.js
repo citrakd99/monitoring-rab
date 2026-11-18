@@ -7,8 +7,8 @@
 const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto');
 
 function createSim(files) {
-  const sheets = {}, props = {}, cacheMap = {};
-  const stats = { getValues: 0, setValues: 0 };
+  const sheets = {}, props = {}, cacheMap = {}, external = {};
+  const stats = { getValues: 0, setValues: 0, extReads: 0 };
 
   function colNum(letters) { let n = 0; for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64); return n; }
 
@@ -76,9 +76,14 @@ function createSim(files) {
   };
   const sandbox = {
     console,
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss },
+    // openById: spreadsheet lain yang didaftarkan lewat sim.addExternal(id, {Tab: [[...], ...]}); selain itu = database
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: id => { if (external[id]) return external[id]; if (props.SHEET_ID === id) return ss; throw new Error('Tidak punya akses ke spreadsheet ' + id); } },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = String(v); } }) },
-    CacheService: { getScriptCache: () => ({ get: k => cacheMap[k] || null, put: (k, v) => { cacheMap[k] = v; }, remove: k => { delete cacheMap[k]; } }) },
+    CacheService: { getScriptCache: () => ({
+      get: k => cacheMap[k] || null, put: (k, v) => { if (String(v).length > 100000) throw new Error('Argument too large'); cacheMap[k] = v; }, remove: k => { delete cacheMap[k]; },
+      putAll: o => { Object.keys(o).forEach(k => { if (String(o[k]).length > 100000) throw new Error('Argument too large: ' + k); cacheMap[k] = o[k]; }); },
+      getAll: ks => { const r = {}; ks.forEach(k => { if (cacheMap[k] != null) r[k] = cacheMap[k]; }); return r; }
+    }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Utilities: {
       getUuid: () => crypto.randomUUID(),
@@ -97,7 +102,15 @@ function createSim(files) {
   const X = sandbox.__x;
   const raw = body => X.doPost({ postData: { contents: body } }).getContent();
   const call = (code, action, payload) => JSON.parse(raw(JSON.stringify({ code, action, payload })));
-  return { X, sheets, props, cacheMap, stats, raw, call };
+  /** Daftarkan spreadsheet lain (mis. SUMMARY COST) yang bisa dibuka lewat openById. Nilai Date tetap Date seperti Sheets. */
+  const addExternal = (id, tabs, title) => {
+    const list = Object.keys(tabs).map(name => ({
+      getName: () => name,
+      getDataRange: () => ({ getValues: () => { stats.getValues++; stats.extReads = (stats.extReads || 0) + 1; return tabs[name].map(r => r.slice()); } })
+    }));
+    external[id] = { getName: () => title || 'Eksternal', getSheets: () => list, getSpreadsheetTimeZone: () => 'Asia/Jakarta' };
+  };
+  return { X, sheets, props, cacheMap, stats, raw, call, addExternal };
 }
 
 module.exports = { createSim };

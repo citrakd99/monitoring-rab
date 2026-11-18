@@ -13,6 +13,23 @@ sim.X.setup();
 sim.props.CODE_ADMIN = 'ADM-DEMO-123'; sim.props.CODE_INPUT = 'INP-DEMO-123'; sim.props.CODE_VIEW = 'LHT-DEMO-123';
 let offline = false;
 
+// Opsional: tiru sheet SUMMARY COST (privat) dari file lokal:  --po "path.xlsx" --po-id <id sheet>
+const argv = process.argv.slice(2), arg = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
+if (arg('--po')) {
+  const XLSX = require(path.join(__dirname, '..', '..', 'webapp', 'vendor', 'xlsx.full.min.js'));
+  const wb = XLSX.read(fs.readFileSync(arg('--po'))), tabs = {};
+  wb.SheetNames.forEach(n => {
+    const ws = wb.Sheets[n], aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+    Object.keys(ws).forEach(a => {
+      if (a[0] === '!') return; const c = ws[a];
+      if (c.t === 'n' && c.z && XLSX.SSF.is_date(c.z)) { const rc = XLSX.utils.decode_cell(a), p = XLSX.SSF.parse_date_code(c.v); if (aoa[rc.r]) aoa[rc.r][rc.c] = new Date(Date.UTC(p.y, p.m - 1, p.d) - 7 * 3600e3); }
+    });
+    tabs[n] = aoa;
+  });
+  sim.addExternal(arg('--po-id') || 'DEMO-SUMMARY-COST-000000001', tabs, path.basename(arg('--po'), '.xlsx'));
+  console.log('Sheet SUMMARY COST tiruan: ' + (arg('--po-id') || 'DEMO-SUMMARY-COST-000000001'));
+}
+
 const root = path.join(__dirname, '..', '..', 'webapp');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.xlsx': 'application/octet-stream' };
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' };

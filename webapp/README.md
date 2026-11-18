@@ -59,6 +59,20 @@ tiap ±4 menit saat aplikasi terbuka; salinan terakhir dipakai saat offline.
   bila tanggal/item/nilai di sheet Amprah diubah, baris itu kembali memakai aturan.
 - Status nota (DONE / MASIH DI PIC / TIDAK ADA NOTA) tampil per transaksi; dashboard merangkum nilai yang notanya belum lengkap.
 
+## Integrasi PO (sheet SUMMARY COST)
+**Data & Backup → Integrasi PO** (Admin, mode server): tempel link Google Sheet SUMMARY COST. Sheet **tetap privat** —
+dibaca oleh server Apps Script atas nama pemilik sheet, di-cache 5 menit, dan hanya diberikan ke pengguna berkode akses.
+Mode lokal: upload file .xlsx SUMMARY COST.
+- Tab **PO** → komitmen (DPP = jumlah kolom TOTAL per baris), **PO TERBAYAR** → actual, **HUTANG** → tagihan belum dibayar.
+  Pembayaran & tagihan dicocokkan ke PO lewat kode (`001/123-26.008/2` → PO `123.26-008`).
+- **Tanpa pajak**: pembayaran/tagihan bruto dikonversi ke DPP per PO. Faktor diambil dari baris ringkasan PO
+  (PPN/PPh), atau ditebak dari pola (porsi bulat 5%: mis. 33,3% = DP 30% + PPN), atau dipilih manual di detail PO
+  (Tanpa pajak / PPN 11% / PPN − PPh 2% / PPh 2%).
+- Setiap **baris** PO dialokasikan lewat aturan (kategori kolom T + kata kunci deskripsi/vendor → item, **§ seksi**, atau
+  ▣ paket). Target seksi dibagi ke item seksi itu sebanding budget. Subkon MEP besar sengaja dibiarkan manual.
+- Koreksi per PO (alokasi dan/atau mode pajak) disimpan di tab `PO_Koreksi`. Transaksi PO manual yang nomornya sama
+  dengan PO di sheet diberi peringatan (kemungkinan terhitung dua kali).
+
 ## Pasang di laptop sebagai aplikasi (PWA)
 Buka situs di **Chrome/Edge** → tombol **⤓ Pasang aplikasi** di kanan atas (atau ikon ⊕ di kolom alamat).
 Aplikasi mendapat ikon di Start Menu/desktop/taskbar, terbuka di jendela sendiri, dan tetap bisa dibuka saat offline.

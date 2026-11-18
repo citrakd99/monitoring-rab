@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  MONITORING RAB — Apps Script (database Google Sheet)   versi API 1.1.0
+ *  MONITORING RAB — Apps Script (database Google Sheet)   versi API 1.2.0
  *  FILE GABUNGAN — salin SELURUH isi file ini ke Code.gs di editor Apps Script.
  *  Jangan diedit di sini; sumbernya Db.gs, Code.gs, Setup.gs (lalu: node backend/build.js).
  *
@@ -30,7 +30,9 @@ const TABLES = {
   Log: ['waktu', 'peran', 'aksi', 'detail'],
   // pengaturan aplikasi (link sheet Amprah, aturan pemetaan) dan koreksi alokasi per baris Amprah
   Setting: ['key', 'value', 'updated'],
-  Amprah_Koreksi: ['key', 'data', 'updated', 'oleh']
+  Amprah_Koreksi: ['key', 'data', 'updated', 'oleh'],
+  // koreksi alokasi / mode pajak per PO dari sheet SUMMARY COST
+  PO_Koreksi: ['key', 'data', 'updated', 'oleh']
 };
 /* Kolom teks: diformat "@" agar Sheets tidak mengubah "001" jadi 1, tanggal jadi Date, atau "- Beton" jadi rumus. */
 const TEXT_COLS = {
@@ -45,7 +47,8 @@ const TEXT_COLS = {
   Paket_Item: ['pkg_id', 'item_id'],
   Log: ['waktu', 'peran', 'aksi', 'detail'],
   Setting: ['key', 'value'],
-  Amprah_Koreksi: ['key', 'data', 'oleh']
+  Amprah_Koreksi: ['key', 'data', 'oleh'],
+  PO_Koreksi: ['key', 'data', 'oleh']
 };
 
 function ss_() {
@@ -53,7 +56,7 @@ function ss_() {
   return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
 }
 /* Tab yang ditambahkan di versi lebih baru: dibuat otomatis bila belum ada (tanpa perlu setup ulang). */
-const AUTO_TABLES = ['Setting', 'Amprah_Koreksi'];
+const AUTO_TABLES = ['Setting', 'Amprah_Koreksi', 'PO_Koreksi'];
 function sheet_(name) {
   const ss = ss_();
   let sh = ss.getSheetByName(name);
@@ -178,7 +181,7 @@ function getMeta_() { const m = {}; readTable_('Meta').forEach(function (r) { m[
  *  - input : catat/ubah/hapus transaksi dan paket
  *  - view  : hanya membaca
  */
-const API_VERSION = '1.1.0';
+const API_VERSION = '1.2.0';
 const MAX_FAILS = 10;
 const LOCK_SECONDS = 600;
 const ALL = ['admin', 'input', 'view'], WRITE = ['admin', 'input'], ADMIN = ['admin'];
@@ -340,10 +343,86 @@ function readData_() {
   readTable_('Amprah_Koreksi').forEach(function (r) {
     try { const d = JSON.parse(str_(r.data)); d.updated = num_(r.updated) || 0; d.oleh = str_(r.oleh); amOvr[str_(r.key)] = d; } catch (e) { /* abaikan */ }
   });
-  return { tx: tx, pkgs: pkgs, set: set, amOvr: amOvr };
+  const poOvr = {};
+  readTable_('PO_Koreksi').forEach(function (r) {
+    try { const d = JSON.parse(str_(r.data)); d.updated = num_(r.updated) || 0; d.oleh = str_(r.oleh); poOvr[str_(r.key)] = d; } catch (e) { /* abaikan */ }
+  });
+  return { tx: tx, pkgs: pkgs, set: set, amOvr: amOvr, poOvr: poOvr };
 }
 
-const SETTING_KEYS = ['amprahSrc', 'amprahRules'];
+const SETTING_KEYS = ['amprahSrc', 'amprahRules', 'poSrc', 'poRules'];
+// target alokasi: L:item, P:paket, S:seksi (kode), X:item lama yang hilang
+const TARGET_RE = /^[LPXS]:[A-Za-z0-9_-]+$/;
+const TAX_MODES = ['auto', 'none', 'ppn', 'ppn-pph2', 'pph2'];
+function cleanPoOvr_(key, ovr) {
+  if (!/^[A-Za-z0-9:_.|-]{4,200}$/.test(str_(key))) throw apiError_('VALIDATION', 'Kunci PO tidak valid');
+  if (ovr === null) return null;
+  const alok = ovr.alok == null ? null : (ovr.alok || []).map(function (a) {
+    if (!TARGET_RE.test(str_(a.t))) throw apiError_('VALIDATION', 'Target alokasi tidak valid: ' + a.t);
+    if (['mat', 'upah', 'lain'].indexOf(a.k) < 0) throw apiError_('VALIDATION', 'Komponen alokasi tidak valid');
+    return { t: a.t, k: a.k, v: Number(a.v) || 0 };
+  }).filter(function (a) { return a.v; });
+  const tax = str_(ovr.tax || 'auto');
+  if (TAX_MODES.indexOf(tax) < 0) throw apiError_('VALIDATION', 'Mode pajak tidak dikenal: ' + tax);
+  const s = JSON.stringify({ alok: alok, tax: tax, ket: str_(ovr.ket).slice(0, 300) });
+  if (s.length > 45000) throw apiError_('VALIDATION', 'Koreksi terlalu besar');
+  return s;
+}
+function writePoOvrs_(poOvr, role) {
+  writeTable_('PO_Koreksi', Object.keys(poOvr || {}).map(function (k) {
+    const o = poOvr[k];
+    return { key: k, data: cleanPoOvr_(k, o), updated: Number(o.updated) || Date.now(), oleh: str_(o.oleh) || role };
+  }));
+}
+
+/* ---------- Baca sheet SUMMARY COST (privat) atas nama pemilik script ---------- */
+const PO_CACHE_SEC = 300;
+function cachePutBig_(key, str) {
+  const c = CacheService.getScriptCache(), size = 90000, parts = {}, n = Math.ceil(str.length / size);
+  for (let i = 0; i < n; i++) parts[key + ':' + i] = str.slice(i * size, (i + 1) * size);
+  parts[key + ':n'] = String(n);
+  c.putAll(parts, PO_CACHE_SEC);
+}
+function cacheGetBig_(key) {
+  const c = CacheService.getScriptCache(), n = Number(c.get(key + ':n') || 0);
+  if (!n) return null;
+  const keys = []; for (let i = 0; i < n; i++) keys.push(key + ':' + i);
+  const got = c.getAll(keys);
+  let out = '';
+  for (let i = 0; i < n; i++) { if (got[keys[i]] == null) return null; out += got[keys[i]]; }
+  return out;
+}
+function findSheet_(ss, re) { return ss.getSheets().filter(function (sh) { return re.test(String(sh.getName()).trim()); })[0] || null; }
+/** Ambil hanya kolom yang dipakai; baris tanpa nilai dibuang. Tanggal → teks yyyy-MM-dd. */
+function readPoSource_(id) {
+  let ss;
+  try { ss = SpreadsheetApp.openById(id); }
+  catch (e) { throw apiError_('NO_ACCESS', 'Server tidak bisa membuka sheet SUMMARY COST. Pastikan sheet dimiliki/dibagikan ke akun yang men-deploy Apps Script.'); }
+  // tanggal diformat dengan zona waktu sheet SUMMARY COST sendiri (bukan zona script) agar tidak bergeser sehari
+  const tz = (ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || TZ;
+  const dcell = function (x) { return Object.prototype.toString.call(x) === '[object Date]' ? Utilities.formatDate(x, tz, 'yyyy-MM-dd') : x; };
+  const shPo = findSheet_(ss, /^po$/i), shPay = findSheet_(ss, /^po\s*terbayar/i), shHut = findSheet_(ss, /^hutang/i);
+  if (!shPo) throw apiError_('NOT_FOUND', 'Tab "PO" tidak ditemukan di sheet SUMMARY COST');
+  const pick = function (sh, cols, keep) {
+    if (!sh) return [];
+    const v = sh.getDataRange().getValues(), out = [];
+    for (let r = 0; r < v.length; r++) {
+      const row = cols.map(function (c) { return dcell(v[r][c] === undefined ? '' : v[r][c]); });
+      if (keep(row)) out.push(row);
+    }
+    return out;
+  };
+  const num = function (x) { return typeof x === 'number' && isFinite(x) && x !== 0; };
+  // PO: A..Q (0..16) + T (19). Simpan baris bernilai (J) dan baris ringkasan (A kosong, K angka).
+  const po = pick(shPo, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19], function (r) {
+    return (String(r[0]).trim() && num(r[9])) || (!String(r[0]).trim() && num(r[10]));
+  });
+  // PO TERBAYAR: A tgl, C proyek, E BKK, F vendor, G rincian/ref, H debit, I kredit
+  const pay = pick(shPay, [0, 2, 4, 5, 6, 7, 8], function (r) { return num(r[6]) || num(r[5]); });
+  // HUTANG: B diterima, C jatuh tempo, D vendor, E PO no, F kwitansi, G PPh, H sisa hutang
+  const hut = pick(shHut, [1, 2, 3, 4, 5, 6, 7], function (r) { return num(r[6]); });
+  return { id: id, title: ss.getName(), fetchedAt: nowIso_(), po: po, pay: pay, hut: hut };
+}
 function cleanSetting_(key, value) {
   if (SETTING_KEYS.indexOf(key) < 0) throw apiError_('VALIDATION', 'Pengaturan tidak dikenal: ' + key);
   const s = JSON.stringify(value === undefined ? null : value);
@@ -354,7 +433,7 @@ function cleanOvr_(key, ovr) {
   if (!/^[A-Za-z0-9:_.|-]{4,200}$/.test(str_(key))) throw apiError_('VALIDATION', 'Kunci baris Amprah tidak valid');
   if (ovr === null) return null;
   const alok = (ovr.alok || []).map(function (a) {
-    if (!/^[LPX]:[A-Za-z0-9_-]+$/.test(str_(a.t))) throw apiError_('VALIDATION', 'Target alokasi tidak valid: ' + a.t);
+    if (!TARGET_RE.test(str_(a.t))) throw apiError_('VALIDATION', 'Target alokasi tidak valid: ' + a.t);
     if (['mat', 'upah', 'lain'].indexOf(a.k) < 0) throw apiError_('VALIDATION', 'Komponen alokasi tidak valid');
     return { t: a.t, k: a.k, v: Number(a.v) || 0 };
   }).filter(function (a) { return a.v; });
@@ -388,7 +467,7 @@ function cleanTx_(t) {
   if (!isFinite(nilai) || nilai <= 0) throw apiError_('VALIDATION', 'Nilai transaksi harus > 0');
   if (!isFinite(bayar) || bayar < 0) throw apiError_('VALIDATION', 'Nilai dibayar tidak valid');
   const alok = (t.alok || []).map(function (a) {
-    if (!/^[LPX]:[A-Za-z0-9_-]+$/.test(str_(a.t))) throw apiError_('VALIDATION', 'Target alokasi tidak valid: ' + a.t);
+    if (!TARGET_RE.test(str_(a.t))) throw apiError_('VALIDATION', 'Target alokasi tidak valid: ' + a.t);
     if (['mat', 'upah', 'lain'].indexOf(a.k) < 0) throw apiError_('VALIDATION', 'Komponen alokasi tidak valid');
     const v = Number(a.v); if (!isFinite(v)) throw apiError_('VALIDATION', 'Nilai alokasi tidak valid');
     return { t: a.t, k: a.k, v: v };
@@ -488,6 +567,29 @@ const ACTIONS = {
     return { dataVer: bump_('DATA_VER') };
   } },
 
+  /** Koreksi alokasi / mode pajak untuk satu PO (ovr = null → kembali otomatis). */
+  savePoOvr: { roles: WRITE, write: true, fn: function (p, a) {
+    const key = str_(p.key), s = cleanPoOvr_(key, p.ovr === undefined ? null : p.ovr);
+    if (s === null) deleteById_('PO_Koreksi', key);
+    else upsertRow_('PO_Koreksi', { key: key, data: s, updated: Date.now(), oleh: a.role });
+    appendLog_(a.role, 'savePoOvr', { key: key, hapus: s === null });
+    return { dataVer: bump_('DATA_VER') };
+  } },
+
+  /** Data PO dari sheet SUMMARY COST (privat; dibuka atas nama pemilik script). Di-cache 5 menit. */
+  loadPo: { roles: ALL, fn: function (p) {
+    let src = null;
+    readTable_('Setting').forEach(function (r) { if (r.key === 'poSrc') { try { src = JSON.parse(str_(r.value)); } catch (e) { /* abaikan */ } } });
+    if (!src || !src.id) return { configured: false };
+    if (!/^[A-Za-z0-9_-]{20,}$/.test(src.id)) throw apiError_('VALIDATION', 'ID sheet SUMMARY COST tidak valid');
+    const key = 'po:' + src.id;
+    if (!p.force) { const c = cacheGetBig_(key); if (c) { const o = JSON.parse(c); o.cached = true; o.configured = true; return o; } }
+    const out = readPoSource_(src.id);
+    try { cachePutBig_(key, JSON.stringify(out)); } catch (e) { /* cache gagal tidak masalah */ }
+    out.configured = true;
+    return out;
+  } },
+
   /** Admin: terbitkan RAB hasil baca file .xlsx. Opsional sekaligus menulis ulang data hasil pemetaan ulang id item. */
   publishRab: { roles: ADMIN, write: true, fn: function (p, a) {
     const rab = p.rab;
@@ -506,7 +608,7 @@ const ACTIONS = {
   importData: { roles: ADMIN, write: true, fn: function (p, a) {
     const d = p.data || {};
     const incomingTx = (d.tx || []).map(cleanTx_), incomingPk = (d.pkgs || []).map(cleanPkg_);
-    let tx = incomingTx, pkgs = incomingPk, set = d.set || null, amOvr = d.amOvr || null;
+    let tx = incomingTx, pkgs = incomingPk, set = d.set || null, amOvr = d.amOvr || null, poOvr = d.poOvr || null;
     if (p.mode !== 'replace') {
       const cur = readData_();
       const txMap = {}; cur.tx.forEach(function (t) { txMap[t.id] = t; }); incomingTx.forEach(function (t) { txMap[t.id] = t; });
@@ -515,8 +617,9 @@ const ACTIONS = {
       pkgs = Object.keys(pkMap).map(function (k) { return pkMap[k]; });
       if (set) set = Object.assign({}, cur.set, set);
       if (amOvr) amOvr = Object.assign({}, cur.amOvr, amOvr);
+      if (poOvr) poOvr = Object.assign({}, cur.poOvr, poOvr);
     }
-    replaceAllData_({ tx: tx, pkgs: pkgs, set: set, amOvr: amOvr }, a.role);
+    replaceAllData_({ tx: tx, pkgs: pkgs, set: set, amOvr: amOvr, poOvr: poOvr }, a.role);
     appendLog_(a.role, 'importData', { mode: p.mode || 'merge', tx: incomingTx.length, pkgs: incomingPk.length });
     return { tx: tx.length, pkgs: pkgs.length, dataVer: bump_('DATA_VER') };
   } },
@@ -548,6 +651,7 @@ function replaceAllData_(d, role) {
   // pengaturan & koreksi Amprah hanya ditulis bila dikirim (mis. hasil pemetaan ulang id item)
   if (d.set) writeSettings_(d.set);
   if (d.amOvr) writeOvrs_(d.amOvr, role);
+  if (d.poOvr) writePoOvrs_(d.poOvr, role);
 }
 
 /* ======================= Setup.gs ======================= */

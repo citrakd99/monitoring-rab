@@ -14,7 +14,9 @@ const TABLES = {
   Log: ['waktu', 'peran', 'aksi', 'detail'],
   // pengaturan aplikasi (link sheet Amprah, aturan pemetaan) dan koreksi alokasi per baris Amprah
   Setting: ['key', 'value', 'updated'],
-  Amprah_Koreksi: ['key', 'data', 'updated', 'oleh']
+  Amprah_Koreksi: ['key', 'data', 'updated', 'oleh'],
+  // koreksi alokasi / mode pajak per PO dari sheet SUMMARY COST
+  PO_Koreksi: ['key', 'data', 'updated', 'oleh']
 };
 /* Kolom teks: diformat "@" agar Sheets tidak mengubah "001" jadi 1, tanggal jadi Date, atau "- Beton" jadi rumus. */
 const TEXT_COLS = {
@@ -29,7 +31,8 @@ const TEXT_COLS = {
   Paket_Item: ['pkg_id', 'item_id'],
   Log: ['waktu', 'peran', 'aksi', 'detail'],
   Setting: ['key', 'value'],
-  Amprah_Koreksi: ['key', 'data', 'oleh']
+  Amprah_Koreksi: ['key', 'data', 'oleh'],
+  PO_Koreksi: ['key', 'data', 'oleh']
 };
 
 function ss_() {
@@ -37,7 +40,7 @@ function ss_() {
   return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
 }
 /* Tab yang ditambahkan di versi lebih baru: dibuat otomatis bila belum ada (tanpa perlu setup ulang). */
-const AUTO_TABLES = ['Setting', 'Amprah_Koreksi'];
+const AUTO_TABLES = ['Setting', 'Amprah_Koreksi', 'PO_Koreksi'];
 function sheet_(name) {
   const ss = ss_();
   let sh = ss.getSheetByName(name);
