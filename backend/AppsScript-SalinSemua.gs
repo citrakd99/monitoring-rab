@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  MONITORING RAB — Apps Script (database Google Sheet)   versi API 1.2.0
+ *  MONITORING RAB — Apps Script (database Google Sheet)   versi API 1.3.0
  *  FILE GABUNGAN — salin SELURUH isi file ini ke Code.gs di editor Apps Script.
  *  Jangan diedit di sini; sumbernya Db.gs, Code.gs, Setup.gs (lalu: node backend/build.js).
  *
@@ -22,7 +22,8 @@ const TABLES = {
   Budget: ['id', 'g', 'row', 'sec', 'sub', 'no', 'desc', 'unit', 'qty', 'mat', 'upah', 'lain', 'total', 'rem', 'ahs'],
   AHS: ['id', 'src', 'r0', 'r1', 'sumRow', 'no', 'sec', 'title', 'per', 'bulat', 'nama', 'sat', 'koef', 'hm', 'hu', 'jm', 'ju'],
   HARSAT: ['id', 'no', 'sec', 'nama', 'harga', 'sat', 'upd', 'brand', 'lok', 'vendor', 'ket', 'jenis'],
-  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'nilai', 'bayar', 'batal', 'ket', 'created', 'updated', 'oleh'],
+  // kolom baru selalu ditambahkan di AKHIR (database lama tetap terbaca; header dilengkapi otomatis)
+  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'nilai', 'bayar', 'batal', 'ket', 'created', 'updated', 'oleh', 'spk'],
   Alokasi: ['tx_id', 'target', 'komponen', 'nilai'],
   Rincian: ['tx_id', 'h', 'nama', 'qty', 'sat', 'harga'],
   Paket: ['id', 'nama', 'ket', 'updated'],
@@ -32,7 +33,9 @@ const TABLES = {
   Setting: ['key', 'value', 'updated'],
   Amprah_Koreksi: ['key', 'data', 'updated', 'oleh'],
   // koreksi alokasi / mode pajak per PO dari sheet SUMMARY COST
-  PO_Koreksi: ['key', 'data', 'updated', 'oleh']
+  PO_Koreksi: ['key', 'data', 'updated', 'oleh'],
+  // item SPK mandor (dari file draft SPK); spk = 'NON' untuk daftar harga NON SPK
+  SPK: ['mandor', 'spk', 'pekerjaan', 'sheet', 'urut', 'item_id', 'desc', 'spec', 'sat', 'vol100', 'vol', 'harga', 'jumlah', 'faktor', 'file', 'updated']
 };
 /* Kolom teks: diformat "@" agar Sheets tidak mengubah "001" jadi 1, tanggal jadi Date, atau "- Beton" jadi rumus. */
 const TEXT_COLS = {
@@ -40,7 +43,7 @@ const TEXT_COLS = {
   Budget: ['id', 'g', 'sec', 'sub', 'no', 'desc', 'unit', 'rem', 'ahs'],
   AHS: ['id', 'src', 'no', 'sec', 'title', 'per', 'nama', 'sat'],
   HARSAT: ['id', 'no', 'sec', 'nama', 'sat', 'upd', 'brand', 'lok', 'vendor', 'ket', 'jenis'],
-  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'ket', 'oleh'],
+  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'ket', 'oleh', 'spk'],
   Alokasi: ['tx_id', 'target', 'komponen'],
   Rincian: ['tx_id', 'h', 'nama', 'sat'],
   Paket: ['id', 'nama', 'ket'],
@@ -48,7 +51,8 @@ const TEXT_COLS = {
   Log: ['waktu', 'peran', 'aksi', 'detail'],
   Setting: ['key', 'value'],
   Amprah_Koreksi: ['key', 'data', 'oleh'],
-  PO_Koreksi: ['key', 'data', 'oleh']
+  PO_Koreksi: ['key', 'data', 'oleh'],
+  SPK: ['mandor', 'spk', 'pekerjaan', 'sheet', 'item_id', 'desc', 'spec', 'sat', 'file']
 };
 
 function ss_() {
@@ -56,10 +60,20 @@ function ss_() {
   return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
 }
 /* Tab yang ditambahkan di versi lebih baru: dibuat otomatis bila belum ada (tanpa perlu setup ulang). */
-const AUTO_TABLES = ['Setting', 'Amprah_Koreksi', 'PO_Koreksi'];
+const AUTO_TABLES = ['Setting', 'Amprah_Koreksi', 'PO_Koreksi', 'SPK'];
+const HEADER_OK_ = {};
 function sheet_(name) {
   const ss = ss_();
   let sh = ss.getSheetByName(name);
+  // tab lama dengan kolom lebih sedikit: lengkapi header kolom baru (sekali per eksekusi)
+  if (sh && !HEADER_OK_[name] && sh.getLastRow() > 0) {
+    const head = TABLES[name], cur = sh.getRange(1, 1, 1, head.length).getValues()[0];
+    if (cur.some(function (c, i) { return String(c) !== head[i]; }) && cur.slice(0, head.length).every(function (c, i) { return c === '' || String(c) === head[i]; })) {
+      sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
+      applyTextFormat_(sh, name);
+    }
+    HEADER_OK_[name] = true;
+  }
   if (!sh && AUTO_TABLES.indexOf(name) >= 0) {
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, TABLES[name].length).setValues([TABLES[name]]).setFontWeight('bold');
@@ -181,7 +195,7 @@ function getMeta_() { const m = {}; readTable_('Meta').forEach(function (r) { m[
  *  - input : catat/ubah/hapus transaksi dan paket
  *  - view  : hanya membaca
  */
-const API_VERSION = '1.2.0';
+const API_VERSION = '1.3.0';
 const MAX_FAILS = 10;
 const LOCK_SECONDS = 600;
 const ALL = ['admin', 'input', 'view'], WRITE = ['admin', 'input'], ADMIN = ['admin'];
@@ -334,7 +348,7 @@ function readData_() {
     const id = str_(r.id);
     return { id: id, jenis: str_(r.jenis), kat: str_(r.kat), no: str_(r.no), tgl: str_(r.tgl), pihak: str_(r.pihak), uraian: str_(r.uraian),
       nilai: num_(r.nilai) || 0, bayar: num_(r.bayar) || 0, batal: r.batal === true || r.batal === 'TRUE' || r.batal === 'Ya', ket: str_(r.ket),
-      created: num_(r.created) || 0, updated: num_(r.updated) || 0, oleh: str_(r.oleh), alok: alok[id] || [], rinc: rinc[id] || [] };
+      created: num_(r.created) || 0, updated: num_(r.updated) || 0, oleh: str_(r.oleh), spk: str_(r.spk), alok: alok[id] || [], rinc: rinc[id] || [] };
   });
   const pkgs = readTable_('Paket').map(function (r) { const id = str_(r.id); return { id: id, nama: str_(r.nama), ket: str_(r.ket), updated: num_(r.updated) || 0, lines: pitems[id] || [] }; });
   const set = {};
@@ -347,7 +361,20 @@ function readData_() {
   readTable_('PO_Koreksi').forEach(function (r) {
     try { const d = JSON.parse(str_(r.data)); d.updated = num_(r.updated) || 0; d.oleh = str_(r.oleh); poOvr[str_(r.key)] = d; } catch (e) { /* abaikan */ }
   });
-  return { tx: tx, pkgs: pkgs, set: set, amOvr: amOvr, poOvr: poOvr };
+  const spk = readTable_('SPK').map(function (r) {
+    return { mandor: str_(r.mandor), spk: str_(r.spk), pekerjaan: str_(r.pekerjaan), sheet: str_(r.sheet), urut: num_(r.urut) || 0, item_id: str_(r.item_id),
+      desc: str_(r.desc), spec: str_(r.spec), sat: str_(r.sat), vol100: num_(r.vol100), vol: num_(r.vol) || 0, harga: num_(r.harga) || 0,
+      jumlah: num_(r.jumlah) || 0, faktor: num_(r.faktor), file: str_(r.file) };
+  });
+  return { tx: tx, pkgs: pkgs, set: set, amOvr: amOvr, poOvr: poOvr, spk: spk };
+}
+function cleanSpkRow_(r, mandor) {
+  const n = function (v, nullable) { if ((v === '' || v == null) && nullable) return ''; const x = Number(v); if (!isFinite(x)) throw apiError_('VALIDATION', 'Angka SPK tidak valid'); return x; };
+  if (r.item_id && !/^[A-Za-z0-9_-]{1,40}$/.test(str_(r.item_id))) throw apiError_('VALIDATION', 'Item RAB tidak valid: ' + r.item_id);
+  if (!/^[A-Za-z0-9 ._-]{1,12}$/.test(str_(r.spk))) throw apiError_('VALIDATION', 'Nomor SPK tidak valid: ' + r.spk);
+  return { mandor: mandor, spk: str_(r.spk), pekerjaan: str_(r.pekerjaan).slice(0, 150), sheet: str_(r.sheet).slice(0, 60), urut: n(r.urut), item_id: str_(r.item_id),
+    desc: str_(r.desc).slice(0, 300), spec: str_(r.spec).slice(0, 300), sat: str_(r.sat).slice(0, 20), vol100: n(r.vol100, true), vol: n(r.vol), harga: n(r.harga),
+    jumlah: n(r.jumlah), faktor: n(r.faktor, true), file: str_(r.file).slice(0, 150), updated: Date.now() };
 }
 
 const SETTING_KEYS = ['amprahSrc', 'amprahRules', 'poSrc', 'poRules'];
@@ -456,6 +483,11 @@ function writeOvrs_(amOvr, role) {
 }
 
 const KATS = ['po-mat', 'po-sub', 'po-sewa', 'np-obname', 'np-mat', 'np-orang', 'np-lain'];
+function cleanSpkRef_(v) {
+  v = str_(v);
+  if (!/^[A-Za-z0-9_.-]{0,120}$/.test(v)) throw apiError_('VALIDATION', 'Referensi SPK tidak valid');
+  return v;
+}
 function cleanTx_(t) {
   if (!t || typeof t !== 'object') throw apiError_('VALIDATION', 'Data transaksi kosong');
   const id = str_(t.id);
@@ -477,10 +509,11 @@ function cleanTx_(t) {
   }).filter(function (r) { return r.nama; });
   const cut = function (s, n) { return str_(s).slice(0, n); };
   return { id: id, jenis: t.jenis, kat: t.kat, no: cut(t.no, 80), tgl: t.tgl, pihak: cut(t.pihak, 120), uraian: cut(t.uraian, 300), nilai: nilai, bayar: bayar,
-    batal: !!t.batal, ket: cut(t.ket, 300), created: Number(t.created) || Date.now(), updated: Date.now(), alok: alok, rinc: rinc };
+    batal: !!t.batal, ket: cut(t.ket, 300), created: Number(t.created) || Date.now(), updated: Date.now(), alok: alok, rinc: rinc,
+    spk: cleanSpkRef_(t.spk) };
 }
 function writeTx_(t, role) {
-  upsertRow_('Transaksi', { id: t.id, jenis: t.jenis, kat: t.kat, no: t.no, tgl: t.tgl, pihak: t.pihak, uraian: t.uraian, nilai: t.nilai, bayar: t.bayar,
+  upsertRow_('Transaksi', { id: t.id, jenis: t.jenis, kat: t.kat, no: t.no, tgl: t.tgl, pihak: t.pihak, uraian: t.uraian, nilai: t.nilai, bayar: t.bayar, spk: t.spk,
     batal: t.batal, ket: t.ket, created: t.created, updated: t.updated, oleh: role });
   replaceChildren_('Alokasi', t.id, t.alok.map(function (a) { return { tx_id: t.id, target: a.t, komponen: a.k, nilai: a.v }; }));
   replaceChildren_('Rincian', t.id, t.rinc.map(function (r) { return { tx_id: t.id, h: r.h, nama: r.nama, qty: r.qty, sat: r.sat, harga: r.harga }; }));
@@ -576,6 +609,26 @@ const ACTIONS = {
     return { dataVer: bump_('DATA_VER') };
   } },
 
+  /** Admin: terbitkan SPK satu mandor (mengganti SPK mandor itu yang sudah ada). */
+  publishSpk: { roles: ADMIN, write: true, fn: function (p, a) {
+    const mandor = str_(p.mandor).trim().slice(0, 80);
+    if (!mandor) throw apiError_('VALIDATION', 'Nama mandor wajib diisi');
+    const rows = (p.rows || []).map(function (r) { return cleanSpkRow_(r, mandor); });
+    if (!rows.length) throw apiError_('VALIDATION', 'Tidak ada item SPK');
+    if (rows.length > 3000) throw apiError_('VALIDATION', 'Item SPK terlalu banyak');
+    const keep = readTable_('SPK').filter(function (r) { return str_(r.mandor).toLowerCase() !== mandor.toLowerCase(); });
+    writeTable_('SPK', keep.concat(rows));
+    appendLog_(a.role, 'publishSpk', { mandor: mandor, items: rows.length, file: rows[0].file });
+    return { items: rows.length, dataVer: bump_('DATA_VER') };
+  } },
+  deleteSpk: { roles: ADMIN, write: true, fn: function (p, a) {
+    const mandor = str_(p.mandor).trim();
+    const all = readTable_('SPK'), keep = all.filter(function (r) { return str_(r.mandor).toLowerCase() !== mandor.toLowerCase(); });
+    writeTable_('SPK', keep);
+    appendLog_(a.role, 'deleteSpk', { mandor: mandor, items: all.length - keep.length });
+    return { deleted: all.length - keep.length, dataVer: bump_('DATA_VER') };
+  } },
+
   /** Data PO dari sheet SUMMARY COST (privat; dibuka atas nama pemilik script). Di-cache 5 menit. */
   loadPo: { roles: ALL, fn: function (p) {
     let src = null;
@@ -636,7 +689,7 @@ function replaceAllData_(d, role) {
   const pkgs = (d.pkgs || []).map(function (k) { const c = cleanPkg_(k); c.updated = Number(k.updated) || c.updated; return c; });
   writeTable_('Transaksi', tx.map(function (t) {
     return { id: t.id, jenis: t.jenis, kat: t.kat, no: t.no, tgl: t.tgl, pihak: t.pihak, uraian: t.uraian, nilai: t.nilai, bayar: t.bayar, batal: !!t.batal,
-      ket: t.ket, created: t.created, updated: t.updated, oleh: t.oleh || role };
+      ket: t.ket, created: t.created, updated: t.updated, oleh: t.oleh || role, spk: t.spk };
   }));
   const al = [], rc = [], pi = [];
   tx.forEach(function (t) {

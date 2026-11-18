@@ -11,6 +11,7 @@ admin cukup "menerbitkan" RAB sekali per revisi dari webapp, lalu semua pengguna
 | `Setting` | link sheet Amprah, aturan pemetaan Amprah | Admin |
 | `Amprah_Koreksi` | koreksi alokasi per baris Amprah | Admin & Input |
 | `PO_Koreksi` | koreksi alokasi / mode pajak per PO (SUMMARY COST) | Admin & Input |
+| `SPK` | item SPK mandor (+ harga NON SPK) dari file draft SPK | Admin |
 | `Log` | jejak siapa mengubah apa | otomatis |
 
 Isi tab boleh dibaca/difilter langsung di Google Sheets. **Jangan mengubah urutan kolom atau nama tab.**
@@ -57,7 +58,7 @@ Isi tab boleh dibaca/difilter langsung di Google Sheets. **Jangan mengubah uruta
 - Bentrok: bila dua orang mengubah **transaksi yang sama**, simpanan kedua ditolak (`CONFLICT`), pengguna diberi tahu
   dan datanya dimuat ulang. Semua tulis memakai `LockService` sehingga tidak saling menimpa.
 
-Tab `Setting`, `Amprah_Koreksi`, dan `PO_Koreksi` dibuat otomatis saat pertama dipakai — database lama cukup ditempel kode baru +
+Tab `Setting`, `Amprah_Koreksi`, `PO_Koreksi`, dan `SPK` dibuat otomatis, dan header tab lama dilengkapi kolom baru (mis. `spk` di Transaksi) saat pertama dipakai — database lama cukup ditempel kode baru +
 *New version*, tidak perlu menjalankan `setup` ulang.
 
 ### Izin membaca sheet SUMMARY COST
@@ -97,3 +98,4 @@ POST `Content-Type: text/plain`, body `{"code","action","payload"}`.
 | `saveAmprahOvr` | admin, input | `{key, ovr:{alok,rinc}\|null}` | koreksi alokasi satu baris Amprah (null = kembali ke aturan) |
 | `loadPo` | semua | `{force?}` | baca tab PO / PO TERBAYAR / HUTANG dari sheet SUMMARY COST (privat, atas nama pemilik script; cache 5 menit) |
 | `savePoOvr` | admin, input | `{key, ovr:{alok\|null, tax}\|null}` | koreksi alokasi / mode pajak satu PO |
+| `publishSpk` / `deleteSpk` | admin | `{mandor, rows}` / `{mandor}` | terbitkan (ganti) / hapus SPK satu mandor |

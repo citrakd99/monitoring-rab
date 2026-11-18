@@ -73,6 +73,19 @@ Mode lokal: upload file .xlsx SUMMARY COST.
 - Koreksi per PO (alokasi dan/atau mode pajak) disimpan di tab `PO_Koreksi`. Transaksi PO manual yang nomornya sama
   dengan PO di sheet diberi peringatan (kemungkinan terhitung dua kali).
 
+## SPK mandor (komitmen upah)
+**Data & Backup → SPK mandor** (Admin): upload file draft SPK (.xlsx). Setiap tab "SPK …" dibaca (header SPK / MANDOR /
+PEKERJAAN + kolom DESKRIPSI, VOLUME 100%, VOLUME, SAT., HARGA SAT., JUMLAH); tab "NON SPK" disimpan sebagai daftar
+harga upah pekerjaan tambah; tab KLAUSUL diabaikan.
+- Item dicocokkan **otomatis** ke item Bill RAB: seksi dicari dari pasangan volume+uraian dan nama PEKERJAAN, lalu
+  dicocokkan berurutan (uraian, satuan, volume). Hasil ditinjau dulu sebelum diterbitkan (mengganti SPK mandor itu).
+- SPK = **komitmen upah** per item (komponen Upah). **Proyeksi volume 100%** = tarif SPK × volume 100% ditampilkan terpisah
+  (SPK bisa memakai faktor volume, mis. 80%).
+- **Obname**: + Transaksi → Non-PO → Obname → pilih SPK. Obname tertaut dihitung sebagai **pembayaran** SPK (Nilai = progres,
+  Sudah dibayar = setelah potongan retensi), bukan komitmen baru. Retensi = progres − dibayar.
+- **Analisa Harga → Upah SPK vs RAB**: tarif SPK vs upah RAB per item, selisih %, dan dampak pada volume 100%. Item yang
+  di RAB tidak memisah upah/material (rasio <20% / >500%) tidak ikut dihitung dampaknya.
+
 ## Pasang di laptop sebagai aplikasi (PWA)
 Buka situs di **Chrome/Edge** → tombol **⤓ Pasang aplikasi** di kanan atas (atau ikon ⊕ di kolom alamat).
 Aplikasi mendapat ikon di Start Menu/desktop/taskbar, terbuka di jendela sendiri, dan tetap bisa dibuka saat offline.

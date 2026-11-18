@@ -69,7 +69,7 @@ test('request rusak / aksi asing / izin peran', () => {
 
 test('load sebelum RAB terbit: rab null, data kosong', () => {
   const d = ok(lht('load'));
-  assert.strictEqual(d.rab, null); assert.deepStrictEqual(d.data, { tx: [], pkgs: [], set: {}, amOvr: {}, poOvr: {} });
+  assert.strictEqual(d.rab, null); assert.deepStrictEqual(d.data, { tx: [], pkgs: [], set: {}, amOvr: {}, poOvr: {}, spk: [] });
 });
 
 let rabVer;
@@ -319,6 +319,46 @@ if (process.env.PO_XLSX) {
   });
 }
 
+/* ---------- SPK mandor ---------- */
+const SPK_ROWS = [
+  { spk: '001', pekerjaan: 'SIPIL - CONTOH', sheet: 'SPK 001', urut: 1, item_id: 'B3-10', desc: '- Concrete fc 30Mpa', spec: '=termasuk langsir', sat: 'm3', vol100: 538.2, vol: 430.56, harga: 70000, jumlah: 30139200, faktor: 0.8, file: 'draft.xlsx' },
+  { spk: '001', pekerjaan: 'SIPIL - CONTOH', sheet: 'SPK 001', urut: 2, item_id: '', desc: 'Item tanpa pasangan', spec: '', sat: 'ls', vol100: '', vol: 1, harga: 500000, jumlah: 500000, faktor: 0.8, file: 'draft.xlsx' },
+  { spk: 'NON', pekerjaan: 'NON SPK', sheet: 'NON SPK', urut: 1, item_id: '', desc: 'Cutting beton', spec: '', sat: "m'", vol100: '', vol: 0, harga: 10000, jumlah: 0, faktor: '', file: 'draft.xlsx' }
+];
+test('publishSpk: tersimpan per mandor, NON SPK ikut, mandor lain tidak tersentuh; hanya admin', () => {
+  err(inp('publishSpk', { mandor: 'Mandor A', rows: SPK_ROWS }), 'FORBIDDEN', 'input');
+  ok(adm('publishSpk', { mandor: 'Mandor A', rows: SPK_ROWS }));
+  ok(adm('publishSpk', { mandor: 'Mandor B', rows: SPK_ROWS.slice(0, 1) }));
+  ok(adm('publishSpk', { mandor: 'mandor a', rows: SPK_ROWS.slice(0, 2) })); // ganti milik Mandor A (huruf besar/kecil sama)
+  const d = ok(lht('load')).data.spk;
+  assert.strictEqual(d.length, 3);
+  assert.deepStrictEqual(d.filter(r => r.mandor === 'mandor a').map(r => r.desc), ['- Concrete fc 30Mpa', 'Item tanpa pasangan']);
+  const r0 = d.find(r => r.mandor === 'mandor a');
+  assert.strictEqual(r0.spec, '=termasuk langsir'); assert.strictEqual(r0.vol100, 538.2); assert.strictEqual(r0.faktor, 0.8); assert.strictEqual(r0.spk, '001');
+  assert.strictEqual(d.find(r => r.desc === 'Item tanpa pasangan').vol100, null);
+  err(adm('publishSpk', { mandor: 'X', rows: [Object.assign({}, SPK_ROWS[0], { item_id: 'a b' })] }), 'VALIDATION', 'item rab');
+  err(adm('publishSpk', { mandor: '', rows: SPK_ROWS }), 'VALIDATION', 'tanpa mandor');
+  ok(adm('deleteSpk', { mandor: 'Mandor B' }));
+  assert.strictEqual(ok(lht('load')).data.spk.length, 2);
+});
+
+test('saveTx: obname ditautkan ke SPK (kolom spk) tersimpan & terbaca', () => {
+  ok(inp('saveTx', { tx: Object.assign({}, TX, { id: 'tobn00001', jenis: 'NP', kat: 'np-obname', nilai: 1000000, bayar: 950000, alok: [], rinc: [], spk: 'SPK-mandor_a-001' }) }));
+  const t = ok(lht('load')).data.tx.find(x => x.id === 'tobn00001');
+  assert.strictEqual(t.spk, 'SPK-mandor_a-001');
+  err(inp('saveTx', { tx: Object.assign({}, TX, { id: 'tobn00002', spk: 'ada spasi!' }) }), 'VALIDATION', 'referensi spk');
+});
+
+test('database lama: header Transaksi tanpa kolom spk dilengkapi otomatis', () => {
+  // simulator baru = eksekusi baru (seperti tiap permintaan di Apps Script)
+  const s3 = createSim(); s3.X.setup(); s3.props.CODE_ADMIN = ADM;
+  const sh = s3.sheets.Transaksi;
+  sh.rows[0] = sh.rows[0].slice(0, 14); // header versi lama (14 kolom)
+  assert.ok(s3.call(ADM, 'load').ok);
+  assert.strictEqual(sh.rows[0][14], 'spk');
+  assert.ok(sh.textCols.has(15), 'kolom spk berformat teks');
+});
+
 test('getLog mencatat aksi', () => {
   const log = ok(adm('getLog', { limit: 5 }));
   assert.ok(log.length === 5 && log.every(l => l.aksi && l.waktu && l.peran));
@@ -346,6 +386,25 @@ if (process.env.RAB_XLSX) {
     assert.ok(!Object.values(sheets).some(sh => sh.rows.some(r => r && r.includes('#ERROR!'))), 'tidak ada #ERROR!');
     console.log('        ' + rab.items.length + ' item, ' + rab.ahs.length + ' AHS, ' + rab.harsat.length + ' HARSAT · baris tabel: Budget ' + (sheets.Budget.rows.length - 1) + ', AHS ' + (sheets.AHS.rows.length - 1) +
       ' · panggilan Sheets: ' + (sim.stats.setValues - st0.setValues) + ' tulis, ' + (sim.stats.getValues - st0.getValues) + ' baca · ' + (Date.now() - t0) + ' ms (simulasi)');
+  });
+}
+
+if (process.env.SPK_XLSX && process.env.RAB_XLSX) {
+  test('SPK asli: baca → cocokkan ke RAB → publishSpk → load → total & tautan item identik', () => {
+    const W = path.join(__dirname, '..', '..', 'webapp');
+    const XLSX = require(path.join(W, 'vendor', 'xlsx.full.min.js'));
+    const Spk = require(path.join(W, 'js', 'spk.js'));
+    const rab = ok(lht('load')).rab; // RAB asli diterbitkan oleh uji pulang-pergi di atas
+    const p = Spk.parseWorkbook(XLSX, XLSX.read(require('fs').readFileSync(process.env.SPK_XLSX)), rab, 'draft-spk.xlsx');
+    const rows = Spk.toRows(p);
+    ok(adm('publishSpk', { mandor: p.mandor, rows: rows }));
+    const g = Spk.group(ok(lht('load')).data.spk.filter(r => r.mandor === p.mandor));
+    const tot = x => Math.round(x.reduce((a, r) => a + r.jumlah, 0));
+    assert.strictEqual(tot(g.spks.flatMap(s => s.items)), Math.round(p.spks.reduce((a, s) => a + s.items.reduce((b, x) => b + x.jml, 0), 0)));
+    assert.strictEqual(g.spks.length, p.spks.length);
+    const linked = g.spks.flatMap(s => s.items).filter(r => r.item_id).length;
+    assert.strictEqual(linked, p.spks.reduce((a, s) => a + s.items.filter(x => x.item).length, 0));
+    console.log('        ' + p.mandor + ': ' + g.spks.length + ' SPK · ' + rows.length + ' baris (' + (p.nonspk.length) + ' NON SPK) · ' + linked + ' tertaut item RAB · Rp ' + tot(g.spks.flatMap(s => s.items)).toLocaleString('id-ID'));
   });
 }
 

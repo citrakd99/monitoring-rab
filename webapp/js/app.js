@@ -136,6 +136,7 @@
     var h = '';
     h += amprahDashNote();
     h += poDashNote();
+    h += spkDashNote();
     if (t.unallocTx.length) h += '<div class="note">' + t.unallocTx.length + ' transaksi senilai <b>' + rp(t.unalloc) + '</b> belum (penuh) dialokasikan ke item/paket budget — angka per kelompok belum memasukkannya. <button class="lnk" data-act="txUnalloc">Lihat</button></div>';
     if (t.orphan) h += '<div class="note crit">Ada alokasi senilai <b>' + rp(t.orphan) + '</b> yang menunjuk item/paket yang sudah tidak ada (mis. setelah impor ulang RAB). Perbaiki di transaksi terkait.</div>';
     h += '<div class="grid kpis">' +
@@ -201,6 +202,8 @@
       '</tbody></table></div>';
   }
   function jenisTag(x) {
+    if (x.src === 'spk') return '<span class="tag np">SPK</span> <span class="small">upah mandor</span>' + (x.spkUnalloc ? ' <span class="pill warn">belum tertaut ' + rpS(x.spkUnalloc) + '</span>' : '');
+    if (x.noCommit) return '<span class="tag np">Non-PO</span> <span class="small">Obname → SPK</span>';
     if (x.src === 'po') return x.payOnly ? '<span class="tag np">Bayar</span> <span class="small">tanpa PO</span>' + (x.ovr ? ' <span class="tag">dikoreksi</span>' : '')
       : '<span class="tag po">PO</span> <span class="small">' + esc(x.poCat || '') + '</span> <span class="pill ' + (x.status === 'Lunas' ? 'ok' : x.status === 'Terbit' ? '' : 'warn') + '">' + esc(x.status) + '</span>' + (x.ovr || x.ovrTax ? ' <span class="tag">dikoreksi</span>' : '');
     if (x.src === 'amprah') return '<span class="tag am">Amprah</span> <span class="small">' + esc(x.jenisAmprah || '') + '</span> ' + notaPill(x) + (x.ovr ? ' <span class="tag">dikoreksi</span>' : '');
@@ -320,7 +323,7 @@
     var months = {}; S.allTx().forEach(function (x) { if (x.tgl) months[x.tgl.slice(0, 7)] = 1; });
     var h = '<div class="bar"><div class="grow"><input type="search" id="tq" placeholder="Cari no. dokumen, vendor/mandor, uraian…" value="' + esc(f.q) + '"></div>' +
       '<div class="seg" id="tj">' + [['', 'Semua'], ['PO', 'PO'], ['NP', 'Non-PO']].map(function (o) { return '<button data-v="' + o[0] + '" class="' + (f.j === o[0] ? 'on' : '') + '">' + o[1] + '</button>'; }).join('') + '</div>' +
-      '<select id="ts"><option value="">Semua sumber</option>' + [['manual', 'Dicatat manual'], ['po', 'Sheet PO'], ['amprah', 'Sheet Amprah']].map(function (o) { return '<option value="' + o[0] + '"' + (f.s === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+      '<select id="ts"><option value="">Semua sumber</option>' + [['manual', 'Dicatat manual'], ['po', 'Sheet PO'], ['amprah', 'Sheet Amprah'], ['spk', 'SPK mandor']].map(function (o) { return '<option value="' + o[0] + '"' + (f.s === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
       '<select id="tk"><option value="">Semua kategori</option>' + K.KAT_ALL.map(function (k) { return '<option value="' + k.id + '"' + (f.k === k.id ? ' selected' : '') + '>' + esc(k.nama) + '</option>'; }).join('') + '</select>' +
       '<select id="tm"><option value="">Semua bulan</option>' + Object.keys(months).sort().reverse().map(function (m) { return '<option value="' + m + '"' + (f.m === m ? ' selected' : '') + '>' + monthLbl(m) + '</option>'; }).join('') + '</select>' +
       (f.unalloc ? '<button class="btn" data-act="clrUnalloc">✕ Hanya belum dialokasikan</button>' : '') +
@@ -371,10 +374,10 @@
       kpi('Harga aktual tercatat', num(sm.nAct), 'jenis material/upah/alat') +
       kpi('Proyeksi dampak harga', (sm.dampak > 0 ? '+' : sm.dampak < 0 ? '−' : '') + rpS(Math.abs(sm.dampak)), sm.dampak > 0 ? 'lebih mahal dari RAB' : sm.dampak < 0 ? 'lebih hemat dari RAB' : 'belum ada data harga aktual') +
       '</div>';
-    h += '<div class="bar"><div class="seg" id="hv"><button data-v="dasar" class="' + (ui.h.view === 'dasar' ? 'on' : '') + '">Harga dasar &amp; kebutuhan</button><button data-v="ahs" class="' + (ui.h.view === 'ahs' ? 'on' : '') + '">Analisa per pekerjaan (AHS)</button></div></div>';
+    h += '<div class="bar"><div class="seg" id="hv"><button data-v="dasar" class="' + (ui.h.view === 'dasar' ? 'on' : '') + '">Harga dasar &amp; kebutuhan</button><button data-v="ahs" class="' + (ui.h.view === 'ahs' ? 'on' : '') + '">Analisa per pekerjaan (AHS)</button><button data-v="upah" class="' + (ui.h.view === 'upah' ? 'on' : '') + '">Upah SPK vs RAB</button></div></div>';
     host.innerHTML = h + '<div id="hbody"></div>';
     $$('#hv button').forEach(function (b) { b.addEventListener('click', function () { ui.h.view = b.dataset.v; renderAhs(); }); });
-    if (ui.h.view === 'dasar') renderHarsat(); else renderBlocks();
+    if (ui.h.view === 'dasar') renderHarsat(); else if (ui.h.view === 'upah') renderUpah(); else renderBlocks();
   }
   function renderHarsat() {
     var f = ui.h, q = f.q.toLowerCase();
@@ -505,6 +508,7 @@
       '<div class="list-row"><span>' + (Sync.enabled() ? 'Hapus salinan di browser ini & unduh ulang dari server' : 'Hapus semua data di browser ini') + '</span><button class="btn danger" data-act="reset">' + (Sync.enabled() ? 'Unduh ulang' : 'Hapus') + '</button></div>' +
       (S.data.savedAt ? '<p class="small muted" style="margin-top:8px">Disimpan terakhir ' + new Date(S.data.savedAt).toLocaleString('id-ID') + '</p>' : '') +
       '</div></div>';
+    h += spkCard();
     h += poCard();
     h += amprahCard();
     h += installCard();
@@ -561,14 +565,20 @@
     return Sync.load().then(function (fresh) {
       if (!fresh) throw new Error('Tidak bisa memuat data server (offline?). Coba lagi.');
       var snap = function () { return JSON.stringify(S.data.tx.map(function (t) { return t.alok; })) + JSON.stringify(S.data.pkgs.map(function (p) { return p.lines; })) + JSON.stringify(S.data.set.amprahRules || null) + JSON.stringify(S.data.amOvr) + JSON.stringify(S.data.set.poRules || null) + JSON.stringify(S.data.poOvr); };
-      var before = snap();
+      var before = snap(), spkBefore = JSON.stringify(S.data.spk.map(function (r) { return r.item_id; }));
       var rep = S.replaceRab(rab);
+      var spkChanged = JSON.stringify(S.data.spk.map(function (r) { return r.item_id; })) !== spkBefore;
       var after = snap();
       setImp('<div class="note">Mengirim RAB ke Google Sheet… (' + rab.items.length + ' item, ' + (rab.ahs || []).length + ' AHS) — bisa 20–60 detik</div>');
       var payload = { rab: rab };
       if (before !== after) { payload.data = { tx: S.data.tx, pkgs: S.data.pkgs, set: S.data.set, amOvr: S.data.amOvr, poOvr: S.data.poOvr }; payload.baseDataVer = Sync.vers.dataVer; }
       return Sync.api('publishRab', payload).then(function (r) {
         Sync.vers.rabVer = r.rabVer; Sync.vers.dataVer = r.dataVer; Sync.saveState(); Sync.lastSync = new Date();
+        if (spkChanged) {
+          var byMd = {}; S.data.spk.forEach(function (x) { (byMd[x.mandor] = byMd[x.mandor] || []).push(x); });
+          Object.keys(byMd).reduce(function (pr, md) { return pr.then(function () { return Sync.api('publishSpk', { mandor: md, rows: byMd[md] }); }); }, Promise.resolve())
+            .then(function () { toast('Tautan item SPK ikut diperbarui'); Sync.load(); }, function (e) { alert('SPK belum diperbarui: ' + e.message); });
+        }
         setImp('<div class="note ok">RAB terbit: ' + r.written.items + ' item, ' + r.written.ahs + ' baris AHS, ' + r.written.harsat + ' harga dasar' + (payload.data ? ' · alokasi transaksi dipetakan ulang (' + rep.remapped + ')' : '') + '.</div>');
         toast('RAB diterbitkan ke server');
         return rep;
@@ -735,6 +745,150 @@
       rows: rows, val: function (r) { return r.nilai; }, match: function (rule, r) { return Amprah.ruleMatch(rule, r); },
       defaults: function () { return Amprah.defaultRules(S.rab); } });
   }
+  /* ---------- SPK mandor ---------- */
+  function spkTx() { return S.allTx().filter(function (t) { return t.src === 'spk'; }); }
+  /** Baris analisa upah: tarif SPK vs upah RAB per item. */
+  function spkRows() {
+    var out = [];
+    if (!S.data.spk.length) return out;
+    S.spkGroups().spks.forEach(function (sp) {
+      sp.items.forEach(function (x) {
+        var L = x.item_id && C.L[x.item_id], it = L ? L.it : null;
+        var ru = it && it.qty ? it.upah / it.qty : null, harga = +x.harga || 0, v100 = +x.vol100 || +x.vol || 0;
+        var ratio = ru ? harga / ru : null;
+        var odd = ru != null && harga > 0 && (ratio < 0.2 || ratio > 5);
+        out.push({ sp: sp, x: x, it: it, ru: ru, harga: harga, v100: v100, vol: +x.vol || 0, nilai: +x.jumlah || 0, proj: v100 * harga,
+          ratio: ratio, odd: odd, dampak: ru != null && !odd ? (harga - ru) * v100 : null });
+      });
+    });
+    return out;
+  }
+  function spkStats() {
+    var st = { n: 0, nilai: 0, proj: 0, prog: 0, paid: 0, ret: 0, un: 0, nObn: 0 };
+    spkTx().forEach(function (t) { st.n++; st.nilai += t.nilai; st.proj += t.spkV100; st.prog += t.spkProg; st.paid += t.bayar; st.ret += t.spkRet; st.un += t.spkUnalloc; st.nObn += t.obnames.length; });
+    return st;
+  }
+  function spkDashNote() {
+    if (!S.data.spk.length) return '';
+    var st = spkStats();
+    return '<div class="note ok">SPK mandor: <b>' + st.n + '</b> SPK · komitmen upah <b>' + rp(st.nilai) + '</b> · proyeksi volume 100% <b>' + rp(st.proj) + '</b>' +
+      ' · obname ' + (st.nObn ? rp(st.prog) + ' (dibayar ' + rp(st.paid) + (st.ret > 0 ? ', retensi ' + rp(st.ret) : '') + ')' : 'belum ada') +
+      (st.un ? ' · <span class="pill warn">' + rp(st.un) + ' item SPK belum tertaut RAB</span>' : '') +
+      ' · <button class="lnk" data-act="spkAnalisa">Analisa upah</button></div>';
+  }
+  function spkCard() {
+    var canEdit = !Sync.enabled() || Sync.isAdmin();
+    var h = '<div class="card" style="margin-top:12px"><div class="hd"><h2>SPK mandor (komitmen upah)</h2>' + (S.data.spk.length ? '<span class="badge live">' + S.spkGroups().spks.length + ' SPK</span>' : '<span class="badge">Belum ada</span>') + '</div>' +
+      '<p class="small ink2" style="margin-bottom:8px">Upload file draft SPK (.xlsx): setiap tab "SPK …" dibaca, itemnya dicocokkan otomatis ke item Bill RAB, lalu menjadi <b>komitmen upah</b>. ' +
+      'Obname yang ditautkan ke SPK (form transaksi → Obname → pilih SPK) dihitung sebagai <b>pembayaran SPK</b>, bukan komitmen baru. Tab "NON SPK" disimpan sebagai daftar harga upah pekerjaan tambah.</p>';
+    var byM = {};
+    spkTx().forEach(function (t) { var m = byM[t.pihak] = byM[t.pihak] || { n: 0, nilai: 0, proj: 0, prog: 0, paid: 0, un: 0, file: t.ket }; m.n++; m.nilai += t.nilai; m.proj += t.spkV100; m.prog += t.spkProg; m.paid += t.bayar; m.un += t.spkUnalloc; });
+    Object.keys(byM).forEach(function (md) {
+      var m = byM[md];
+      h += '<div class="list-row"><span><b>' + esc(md) + '</b><div class="subtxt">' + m.n + ' SPK · ' + esc(m.file || '') + '</div></span><span style="text-align:right">' + rp(m.nilai) +
+        '<div class="subtxt">volume 100%: ' + rp(m.proj) + ' · obname ' + rp(m.prog) + (m.un ? ' · <span class="pill warn">belum tertaut ' + rpS(m.un) + '</span>' : '') + '</div>' +
+        (canEdit ? '<button class="lnk small danger" data-act="spkDel" data-id="' + esc(md) + '">hapus</button>' : '') + '</span></div>';
+    });
+    h += '<div class="bar" style="margin:10px 0 0">' + (canEdit ? '<label class="btn' + (S.data.spk.length ? '' : ' pri') + '">⤒ Upload draft SPK (.xlsx)<input type="file" id="fSpk" accept=".xlsx,.xlsm" class="hide"></label>' : '') +
+      (S.data.spk.length ? '<button class="btn" data-act="spkAnalisa">Analisa upah SPK vs RAB</button><button class="btn" data-act="spkTxList">Lihat SPK di Transaksi</button>' : '') + '</div>';
+    return h + '</div>';
+  }
+  function spkUpload(file) {
+    if (!S.rab) { alert('Impor / muat RAB dulu.'); return; }
+    file.arrayBuffer().then(function (buf) {
+      var wb = XLSX.read(buf, { type: 'array', cellHTML: false, cellStyles: false });
+      var p = Spk.parseWorkbook(XLSX, wb, S.rab, file.name);
+      if (!p.spks.length) throw new Error('Tidak ada tab SPK yang terbaca (butuh kolom DESKRIPSI PEKERJAAN, VOLUME, HARGA SAT.)');
+      spkReview(p);
+    }).catch(function (e) { alert('Gagal membaca SPK: ' + e.message); });
+  }
+  function spkReview(p) {
+    var tot = 0, n = 0, mm = 0;
+    var rows = p.spks.map(function (sp) {
+      var t = sp.items.reduce(function (a, x) { return a + x.jml; }, 0), k = sp.items.filter(function (x) { return x.item; }).length;
+      tot += t; n += sp.items.length; mm += k;
+      var secs = {}; sp.items.forEach(function (x) { if (x.item && C.L[x.item]) { var it = C.L[x.item].it; secs[grpLabel(it.g) + ' › ' + it.sec] = 1; } });
+      return '<tr><td><b>SPK ' + esc(sp.no) + '</b><div class="subtxt">' + esc(sp.pekerjaan) + '</div></td><td class="small">' + Object.keys(secs).slice(0, 3).map(esc).join('<br>') + '</td><td class="num">' + (sp.factor != null ? nf2.format(sp.factor * 100) + '%' : '—') + '</td>' +
+        '<td class="num">' + k + ' / ' + sp.items.length + '</td><td class="num">' + rp(t) + '</td></tr>' +
+        sp.items.filter(function (x) { return !x.item; }).map(function (x) { return '<tr><td colspan="5" class="small"><span class="pill warn">belum tertaut</span> ' + esc(x.desc) + ' · ' + esc(x.sat) + ' · ' + rp(x.jml) + '</td></tr>'; }).join('');
+    }).join('');
+    var m = openModal('<header><h2>Tinjau SPK sebelum diterbitkan</h2><button class="x" data-close aria-label="Tutup">×</button></header><div class="body">' +
+      '<div class="form" style="margin-bottom:10px"><label>Nama mandor<input type="text" id="spkMandor" value="' + esc(p.mandor) + '"></label><label class="wide small ink2" style="justify-content:flex-end">File: ' + esc(p.file) + '</label></div>' +
+      '<p class="small ink2" style="margin-bottom:8px">' + p.spks.length + ' SPK · ' + n + ' item · <b>' + mm + '</b> tertaut otomatis ke item RAB · total <b>' + rp(tot) + '</b>' + (p.nonspk.length ? ' · ' + p.nonspk.length + ' harga NON SPK' : '') +
+      '. Menerbitkan akan <b>mengganti</b> SPK mandor ini yang sudah ada. Item yang belum tertaut tetap dihitung sebagai komitmen (belum dialokasikan).</p>' +
+      '<div class="tblwrap" style="max-height:50vh"><table><thead><tr><th>SPK</th><th>Masuk ke seksi RAB</th><th class="num">Faktor vol.</th><th class="num">Tertaut</th><th class="num">Nilai</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+      '<footer><span></span><div class="bar" style="margin:0"><button class="btn" data-close>Batal</button><button class="btn pri" id="spkGo">Terbitkan SPK</button></div></footer>');
+    $('#spkGo', m).addEventListener('click', function () {
+      var md = $('#spkMandor', m).value.trim(); if (!md) { alert('Isi nama mandor.'); return; }
+      p.mandor = md;
+      var btn = this; btn.disabled = true; btn.textContent = 'Menerbitkan…';
+      S.publishSpk(md, Spk.toRows(p)).then(function () { closeModal(); render(); toast('SPK ' + md + ' diterbitkan'); }, function (e) { btn.disabled = false; btn.textContent = 'Terbitkan SPK'; alert('Gagal: ' + e.message); });
+    });
+  }
+  function spkDetail(t) {
+    var sp = t.spk;
+    var rows = sp.items.map(function (x) {
+      var L = x.item_id && C.L[x.item_id], it = L ? L.it : null, ru = it && it.qty ? it.upah / it.qty : null, ratio = ru ? x.harga / ru : null, odd = ratio != null && x.harga > 0 && (ratio < 0.2 || ratio > 5);
+      return '<tr><td>' + esc(x.desc) + (x.spec ? '<div class="subtxt">' + esc(x.spec.slice(0, 120)) + '</div>' : '') + '</td><td class="small">' + (it ? '<button class="lnk" style="text-align:left;color:var(--ink)" data-act="line" data-id="' + it.id + '">' + esc(it.desc) + '</button><div class="subtxt">' + esc(grpLabel(it.g) + ' › ' + it.sec) + '</div>' : '<span class="pill warn">belum tertaut</span>') + '</td>' +
+        '<td class="num">' + (x.vol100 != null ? qtyTxt(x.vol100) : '') + '</td><td class="num">' + qtyTxt(x.vol) + ' ' + esc(x.sat) + '</td><td class="num">' + rp(x.harga) + '</td>' +
+        '<td class="num">' + (ru != null ? rp(ru) + (odd ? '<div class="subtxt"><span class="pill">RAB tak memisah upah</span></div>' : '<div class="subtxt">' + pctSigned(ratio - 1) + '</div>') : '—') + '</td><td class="num">' + rp(x.jumlah) + '</td></tr>';
+    }).join('');
+    var obn = t.obnames.map(function (o) { return '<tr data-act="editTx" data-id="' + o.id + '" style="cursor:pointer"><td>' + dateLbl(o.tgl) + '</td><td>' + esc(o.no) + '</td><td>' + esc(o.uraian) + '</td><td class="num">' + rp(o.nilai) + '</td><td class="num">' + rp(o.bayar) + '</td></tr>'; }).join('');
+    openModal('<header><h2>SPK ' + esc(sp.no) + ' — ' + esc(sp.mandor) + '</h2><button class="x" data-close aria-label="Tutup">×</button></header><div class="body">' +
+      '<p class="small ink2" style="margin-bottom:10px">' + esc(sp.pekerjaan) + ' · ' + esc(sp.file || '') + (sp.factor != null ? ' · volume SPK = ' + nf2.format(sp.factor * 100) + '% dari volume 100%' : '') + '</p>' +
+      '<div class="grid kpis">' + kpi('Nilai SPK (komitmen)', rpS(t.nilai), sp.items.length + ' item') + kpi('Proyeksi volume 100%', rpS(t.spkV100), 'tarif SPK × volume 100%') +
+      kpi('Obname (progres)', rpS(t.spkProg), t.obnames.length + ' obname · ' + pctTxt(t.spkProg, t.nilai)) + kpi('Dibayar', rpS(t.bayar), t.spkRet > 0 ? 'retensi ditahan ' + rpS(t.spkRet) : '—') + '</div>' +
+      '<div class="tblwrap" style="max-height:44vh"><table><thead><tr><th>Item SPK</th><th>Item RAB</th><th class="num">Vol 100%</th><th class="num">Vol SPK</th><th class="num">Harga SPK</th><th class="num">Upah RAB</th><th class="num">Jumlah</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<h3 style="font-size:14px;margin:14px 0 6px">Obname tertaut</h3>' + (obn ? '<div class="tblwrap" style="max-height:200px"><table><thead><tr><th>Tanggal</th><th>No.</th><th>Uraian</th><th class="num">Nilai progres</th><th class="num">Dibayar</th></tr></thead><tbody>' + obn + '</tbody></table></div>'
+        : '<p class="small muted">Belum ada. Catat obname: + Transaksi → Non-PO → Obname → pilih SPK ini.</p>') + '</div>' +
+      '<footer><span></span><div class="bar" style="margin:0"><button class="btn pri w" data-act="spkObname" data-id="' + esc(t.key) + '">+ Obname untuk SPK ini</button></div></footer>');
+  }
+  function renderUpah() {
+    var rows = spkRows(), f = ui.u || (ui.u = { q: '', sp: '', f: '' }), q = f.q.toLowerCase();
+    if (!rows.length) { $('#hbody').innerHTML = '<div class="card empty"><h2>Belum ada SPK</h2><p>Upload draft SPK di menu Data &amp; Backup → SPK mandor.</p><p style="margin-top:12px"><button class="btn pri" data-act="goData">Ke Data &amp; Backup</button></p></div>'; return; }
+    var spOpt = {}; rows.forEach(function (r) { spOpt[r.sp.key] = r.sp.mandor + ' · SPK ' + r.sp.no + ' ' + r.sp.pekerjaan.replace(/^sipil\s*-\s*/i, ''); });
+    var list = rows.filter(function (r) {
+      if (f.sp && r.sp.key !== f.sp) return false;
+      if (f.f === 'over' && !(r.ratio > 1.0001 && !r.odd)) return false;
+      if (f.f === 'under' && !(r.ratio < 0.9999 && !r.odd)) return false;
+      if (f.f === 'odd' && !r.odd) return false;
+      if (f.f === 'un' && r.it) return false;
+      if (q && (r.x.desc + ' ' + (r.it ? r.it.desc + ' ' + r.it.sec : '')).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    var sum = list.reduce(function (a, r) { a.nilai += r.nilai; a.proj += r.proj; if (r.dampak != null) { a.rab += r.ru * r.v100; a.projCmp += r.proj; a.d += r.dampak; } return a; }, { nilai: 0, proj: 0, rab: 0, projCmp: 0, d: 0 });
+    var h = '<div class="grid kpis">' + kpi('Nilai SPK', rpS(sum.nilai), list.length + ' item') + kpi('Proyeksi volume 100%', rpS(sum.proj), 'tarif SPK × volume 100%') +
+      kpi('Upah RAB (item sebanding)', rpS(sum.rab), 'proyeksi SPK ' + rpS(sum.projCmp)) + kpi(sum.d <= 0 ? 'Hemat upah vs RAB' : 'Boros upah vs RAB', rpS(Math.abs(sum.d)), sum.rab ? nf2.format(Math.round(Math.abs(sum.d) / sum.rab * 1000) / 10) + '% dari upah RAB' : '') + '</div>';
+    h += '<div class="bar"><div class="grow"><input type="search" id="uq" placeholder="Cari item…" value="' + esc(f.q) + '"></div>' +
+      '<select id="usp"><option value="">Semua SPK</option>' + Object.keys(spOpt).map(function (k) { return '<option value="' + esc(k) + '"' + (f.sp === k ? ' selected' : '') + '>' + esc(spOpt[k]) + '</option>'; }).join('') + '</select>' +
+      '<select id="uf"><option value="">Semua item</option><option value="over"' + (f.f === 'over' ? ' selected' : '') + '>Tarif SPK di atas upah RAB</option><option value="under"' + (f.f === 'under' ? ' selected' : '') + '>Tarif SPK di bawah upah RAB</option><option value="odd"' + (f.f === 'odd' ? ' selected' : '') + '>RAB tak memisah upah</option><option value="un"' + (f.f === 'un' ? ' selected' : '') + '>Belum tertaut RAB</option></select></div>';
+    h += '<p class="small ink2" style="margin-bottom:8px">Upah RAB = kolom UPAH item Bill ÷ volume. Dampak = (tarif SPK − upah RAB) × volume 100%. Item yang di RAB tidak memisah upah/material (rasio &lt;20% atau &gt;500%) tidak dihitung dalam dampak.</p>';
+    h += '<div class="tblwrap"><table><thead><tr><th>Item SPK → RAB</th><th>SPK</th><th class="num">Vol 100%</th><th class="num">Tarif SPK</th><th class="num">Upah RAB</th><th class="num">Selisih</th><th class="num">Nilai SPK</th><th class="num">Dampak @100%</th></tr></thead><tbody>' +
+      list.slice(0, 500).map(function (r) {
+        return '<tr' + (r.it ? ' data-act="line" data-id="' + r.it.id + '" style="cursor:pointer"' : '') + '><td class="desc">' + esc(r.x.desc) + '<div class="subtxt">' + (r.it ? esc(grpLabel(r.it.g) + ' › ' + r.it.sec) : '<span class="pill warn">belum tertaut</span>') + '</div></td>' +
+          '<td class="small">' + esc(r.sp.no) + '</td><td class="num">' + qtyTxt(r.v100) + ' ' + esc(r.x.sat) + '</td><td class="num">' + rp(r.harga) + '</td>' +
+          '<td class="num">' + (r.ru != null ? rp(r.ru) : '—') + '</td><td class="num">' + (r.odd ? '<span class="pill">tak sebanding</span>' : r.ratio != null ? pctSigned(r.ratio - 1) : '—') + '</td>' +
+          '<td class="num">' + rp(r.nilai) + '</td><td class="num">' + (r.dampak != null ? rpSigned(r.dampak) : '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    // NON SPK
+    var non = S.spkGroups().nonspk, nk = Object.keys(non);
+    if (nk.length) h += '<div class="card" style="margin-top:12px"><div class="hd"><h2>Harga upah NON SPK (pekerjaan tambah)</h2></div>' + nk.map(function (md) {
+      return '<p class="small ink2" style="margin:6px 0">' + esc(md) + '</p><div class="tblwrap" style="max-height:260px"><table><thead><tr><th>Pekerjaan</th><th>Sat</th><th class="num">Harga</th></tr></thead><tbody>' +
+        non[md].map(function (x) { return '<tr><td>' + esc(x.desc) + (x.spec ? '<div class="subtxt">' + esc(x.spec.slice(0, 100)) + '</div>' : '') + '</td><td>' + esc(x.sat) + '</td><td class="num">' + rp(x.harga) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    }).join('') + '</div>';
+    $('#hbody').innerHTML = h;
+    var uq = $('#uq'), tmr;
+    uq.addEventListener('input', function () { clearTimeout(tmr); tmr = setTimeout(function () { ui.u.q = uq.value; renderUpah(); var n = $('#uq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); });
+    $('#usp').addEventListener('change', function (e) { ui.u.sp = e.target.value; renderUpah(); });
+    $('#uf').addEventListener('change', function (e) { ui.u.f = e.target.value; renderUpah(); });
+  }
+  function spkSection(it) {
+    var rows = spkRows().filter(function (r) { return r.it && r.it.id === it.id; });
+    if (!rows.length) return '';
+    return '<h3 style="font-size:14px;margin-bottom:6px">SPK mandor</h3><div class="tblwrap" style="max-height:none;margin-bottom:14px"><table><thead><tr><th>SPK</th><th class="num">Vol SPK</th><th class="num">Tarif SPK</th><th class="num">Upah RAB</th><th class="num">Nilai SPK</th></tr></thead><tbody>' +
+      rows.map(function (r) { return '<tr><td>' + esc(r.sp.mandor) + ' · SPK ' + esc(r.sp.no) + '</td><td class="num">' + qtyTxt(r.vol) + ' ' + esc(r.x.sat) + '</td><td class="num">' + rp(r.harga) + '</td><td class="num">' + (r.ru != null ? rp(r.ru) + ' ' + (r.odd ? '' : pctSigned(r.ratio - 1)) : '—') + '</td><td class="num">' + rp(r.nilai) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  }
+
   function poRulesForm() {
     var pp = Po.parsed(S.poSrc()), rows = [];
     if (pp) pp.pos.forEach(function (po) { po.lines.forEach(function (l) { rows.push({ l: l, po: po }); }); });
@@ -875,6 +1029,12 @@
       S.allTx().forEach(function (x) { if (x.batal) return; (x.rinc || []).forEach(function (r) { var h = r.h && HG.H[r.h]; var ref = h && HG.R[h.id] ? HG.R[h.id].ref : null; rc.push([x.tgl, x.no, x.pihak, r.nama, r.qty, r.sat, r.harga, ref, ref && r.harga ? r.harga / ref - 1 : null]); }); });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rc), 'Rincian Harga');
     }
+    var ur = spkRows();
+    if (ur.length) {
+      var us = [['Mandor', 'SPK', 'Pekerjaan', 'Item SPK', 'Sat', 'Volume 100%', 'Volume SPK', 'Tarif SPK', 'Item RAB', 'Seksi RAB', 'Upah RAB / sat', 'Selisih %', 'Nilai SPK', 'Proyeksi 100%', 'Dampak vs RAB @100%']];
+      ur.forEach(function (r) { us.push([r.sp.mandor, r.sp.no, r.sp.pekerjaan, r.x.desc, r.x.sat, r.v100, r.vol, r.harga, r.it ? r.it.desc : '', r.it ? grpLabel(r.it.g) + ' › ' + r.it.sec : '', r.ru != null ? Math.round(r.ru) : null, r.odd ? 'tak sebanding' : r.ratio != null ? r.ratio - 1 : null, Math.round(r.nilai), Math.round(r.proj), r.dampak != null ? Math.round(r.dampak) : null]); });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(us), 'Upah SPK vs RAB');
+    }
     XLSX.writeFile(wb, 'Monitoring RAB ' + today() + '.xlsx');
   }
 
@@ -963,11 +1123,12 @@
     if (!S.rab) { alert('Impor RAB dulu di menu Data & Backup.'); go('data'); return; }
     var isNew = !tx, isAm = !!(tx && tx.src === 'amprah'), isPo = !!(tx && tx.src === 'po'), isExt = isAm || isPo;
     tx = tx ? JSON.parse(JSON.stringify(tx)) : { id: S.nextId('t'), jenis: 'PO', kat: 'po-mat', no: '', tgl: today(), pihak: '', uraian: '', nilai: 0, bayar: 0, alok: [], created: Date.now() };
-    if (preset) { if (preset.jenis) { tx.jenis = preset.jenis; tx.kat = K.KAT[preset.jenis][0].id; } (preset.targets || []).forEach(function (t) { tx.alok.push({ t: t, k: K.KAT_BY[tx.kat].k, v: 0 }); }); }
+    if (preset) { if (preset.jenis) { tx.jenis = preset.jenis; tx.kat = preset.kat || K.KAT[preset.jenis][0].id; } if (preset.spk) tx.spk = preset.spk; (preset.targets || []).forEach(function (t) { tx.alok.push({ t: t, k: K.KAT_BY[tx.kat].k, v: 0 }); }); }
     var m = openModal('<header><h2>' + (isAm ? 'Transaksi Amprah (kas kecil)' : isPo ? (tx.payOnly ? 'Pembayaran tanpa PO' : 'PO ' + esc(tx.poCode) + ' — ' + esc(tx.pihak)) : isNew ? 'Transaksi baru' : 'Ubah transaksi') + '</h2><button class="x" data-close aria-label="Tutup">×</button></header>' +
       '<div class="body">' + (isAm ? amprahNote(tx) : isPo ? poNote(tx) : '') + '<div class="bar"><div class="seg" id="fj"><button data-v="PO">Belanja dengan PO</button><button data-v="NP">Non-PO (obname, material, bayar orang, lain-lain)</button></div></div>' +
       '<div class="form">' +
       '<label>Kategori<select id="fk"></select></label>' +
+      '<label id="lblSpk" class="hide">SPK mandor<select id="fspk"></select></label>' +
       '<label><span id="lblNo">No. PO</span><input type="text" id="fno"></label>' +
       '<label>Tanggal<input type="date" id="ftgl"></label>' +
       '<label><span id="lblPihak">Vendor / supplier</span><input type="text" id="fpihak" list="dlPihak"></label>' +
@@ -998,8 +1159,24 @@
       if (!K.KAT[j].some(function (k) { return k.id === tx.kat; })) tx.kat = K.KAT[j][0].id;
       fk.value = tx.kat; labels();
     }
+    function spkUi() {
+      var lbl = $('#lblSpk', m), sel = $('#fspk', m), g = S.data.spk.length ? S.spkGroups().spks : [];
+      var show = tx.kat === 'np-obname' && g.length && !isExt;
+      lbl.classList.toggle('hide', !show);
+      if (show && !sel.options.length) {
+        sel.innerHTML = '<option value="">— tidak ditautkan (komitmen baru) —</option>' + g.map(function (sp) { return '<option value="' + esc(sp.key) + '">' + esc(sp.mandor + ' · SPK ' + sp.no + ' ' + sp.pekerjaan.replace(/^sipil\s*-\s*/i, '')) + '</option>'; }).join('');
+        sel.value = tx.spk || '';
+        sel.addEventListener('change', function () { tx.spk = sel.value; spkUi(); });
+      }
+      var linkedNow = show && sel.value;
+      var al = $('.alloc', m); if (al) al.classList.toggle('hide', !!linkedNow);
+      var nt = $('#spkLinkNote', m);
+      if (linkedNow && !nt) { nt = document.createElement('div'); nt.id = 'spkLinkNote'; nt.className = 'note ok'; nt.innerHTML = 'Obname ini dihitung sebagai <b>pembayaran SPK</b> (alokasi ke item mengikuti SPK). Isi <b>Nilai</b> = nilai progres obname, <b>Sudah dibayar</b> = yang dibayar setelah potongan retensi.'; $('.form', m).after(nt); }
+      if (!linkedNow && nt) nt.remove();
+    }
     function labels() {
       var po = tx.jenis === 'PO';
+      setTimeout(spkUi, 0);
       $('#lblNo', m).textContent = po ? 'No. PO' : (tx.kat === 'np-obname' ? 'No. obname / SPK' : 'No. nota / bukti');
       $('#lblPihak', m).textContent = po ? 'Vendor / supplier' : (tx.kat === 'np-obname' ? 'Mandor' : tx.kat === 'np-orang' ? 'Penerima' : 'Toko / penerima');
     }
@@ -1160,6 +1337,8 @@
       }
       tx.no = $('#fno', m).value.trim(); tx.tgl = $('#ftgl', m).value; tx.pihak = $('#fpihak', m).value.trim(); tx.uraian = $('#furaian', m).value.trim();
       tx.ket = $('#fket', m).value.trim(); tx.nilai = parseMoney(fn.value); tx.bayar = parseMoney(fb.value);
+      tx.spk = !$('#lblSpk', m).classList.contains('hide') ? $('#fspk', m).value : '';
+      if (tx.spk) tx.alok = [];
       if ($('#fbatal', m)) tx.batal = $('#fbatal', m).checked;
       tx.alok = tx.alok.filter(function (a) { return +a.v; });
       if (!tx.nilai) { alert('Isi nilai transaksi.'); fn.focus(); return; }
@@ -1247,7 +1426,7 @@
       (it.mat || x.r.mat ? row('Material', it.mat, x.r.mat) : '') + (it.upah || x.r.upah ? row('Upah / Jasa', it.upah, x.r.upah) : '') + (it.lain || x.r.lain ? row('Lain-lain', it.lain, x.r.lain) : '') +
       '</tbody><tfoot>' + row('<b>Total</b>', it.total, x.real).replace(/<tr>/, '<tr style="font-weight:650">') + '</tfoot></table></div>' +
       '<p class="small" style="margin:8px 0 14px">Dibayar ' + rp(x.paid) + ' · ' + pillHtml(it.total, x.real) + (inPk.length ? ' · Anggota paket: ' + inPk.map(function (p) { return '<button class="lnk" data-act="pkgDetail" data-id="' + p.id + '">' + esc(p.nama) + '</button>'; }).join(', ') : '') + '</p>' +
-      ahsSection(it) +
+      spkSection(it) + ahsSection(it) +
       '<h3 style="font-size:14px;margin-bottom:6px">Transaksi</h3>' + txListFor(x.tx, 'Ke item ini') + '</div>' +
       '<footer><span></span><div class="bar" style="margin:0"><button class="btn w" data-act="lineToPkg" data-id="' + id + '">Masukkan ke paket…</button><button class="btn pri w" data-act="lineTx" data-id="' + id + '">+ Transaksi untuk item ini</button></div></footer>');
   }
@@ -1296,7 +1475,13 @@
       case 'goData': go('data'); break;
       case 'goTx': go('tx'); break;
       case 'newTx': txForm(); break;
-      case 'editTx': { var t = S.allTx().find(function (x) { return x.id === id; }); if (t) txForm(t); break; }
+      case 'editTx': { var t = S.allTx().find(function (x) { return x.id === id; }); if (t) { if (t.src === 'spk') spkDetail(t); else txForm(S.data.tx.find(function (x) { return x.id === id; }) || t); } break; }
+      case 'spkAnalisa': ui.h.view = 'upah'; go('ahs'); break;
+      case 'spkTxList': ui.t = { q: '', j: '', k: '', m: '', s: 'spk' }; go('tx'); break;
+      case 'spkObname': closeModal(); txForm(null, { jenis: 'NP', kat: 'np-obname', spk: id }); break;
+      case 'spkDel':
+        if (confirm('Hapus semua SPK mandor "' + id + '"? Obname yang tertaut akan kembali dihitung sebagai transaksi biasa.')) S.deleteSpk(id).then(function () { render(); toast('SPK dihapus'); }, function (e) { alert('Gagal: ' + e.message); });
+        break;
       case 'txUnalloc': ui.t = { q: '', j: '', k: '', m: '', s: '', unalloc: true }; go('tx'); break;
       case 'clrUnalloc': ui.t.unalloc = false; renderTx(); break;
       case 'openGroup': ui.b.q = ''; ui.b.f = ''; ui.b.g = id; ui.b.open['g:' + id] = true; go('budget'); break;
@@ -1452,6 +1637,7 @@
   poTick();
   // mode lokal: upload file SUMMARY COST
   document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'fSpk' && e.target.files[0]) { spkUpload(e.target.files[0]); e.target.value = ''; return; }
     if (e.target && e.target.id === 'fPo' && e.target.files[0]) {
       Po.loadFile(e.target.files[0]).then(function (raw) { toast('SUMMARY COST dibaca: ' + raw.po.length + ' baris PO'); }, function (er) { alert('Gagal membaca file: ' + er.message); });
     }

@@ -2,10 +2,10 @@
  * dan tetap terbuka saat offline. Data (Google Sheet / Apps Script) tidak pernah disimpan di cache –
  * permintaan ke server selalu langsung; antrean offline diurus aplikasi (js/sync.js).
  * Naikkan VERSION setiap mengubah daftar SHELL. */
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = 'rabmon-shell-' + VERSION;
 const SHELL = ['./', 'index.html', 'css/style.css', 'manifest.webmanifest',
-  'js/parse-rab.js', 'js/amprah.js', 'js/po.js', 'js/store.js', 'js/sync.js', 'js/calc.js', 'js/charts.js', 'js/app.js',
+  'js/parse-rab.js', 'js/amprah.js', 'js/po.js', 'js/spk.js', 'js/store.js', 'js/sync.js', 'js/calc.js', 'js/charts.js', 'js/app.js',
   'vendor/xlsx.full.min.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-32.png'];
 
 self.addEventListener('install', e => {

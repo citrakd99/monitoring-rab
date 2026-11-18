@@ -6,7 +6,8 @@ const TABLES = {
   Budget: ['id', 'g', 'row', 'sec', 'sub', 'no', 'desc', 'unit', 'qty', 'mat', 'upah', 'lain', 'total', 'rem', 'ahs'],
   AHS: ['id', 'src', 'r0', 'r1', 'sumRow', 'no', 'sec', 'title', 'per', 'bulat', 'nama', 'sat', 'koef', 'hm', 'hu', 'jm', 'ju'],
   HARSAT: ['id', 'no', 'sec', 'nama', 'harga', 'sat', 'upd', 'brand', 'lok', 'vendor', 'ket', 'jenis'],
-  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'nilai', 'bayar', 'batal', 'ket', 'created', 'updated', 'oleh'],
+  // kolom baru selalu ditambahkan di AKHIR (database lama tetap terbaca; header dilengkapi otomatis)
+  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'nilai', 'bayar', 'batal', 'ket', 'created', 'updated', 'oleh', 'spk'],
   Alokasi: ['tx_id', 'target', 'komponen', 'nilai'],
   Rincian: ['tx_id', 'h', 'nama', 'qty', 'sat', 'harga'],
   Paket: ['id', 'nama', 'ket', 'updated'],
@@ -16,7 +17,9 @@ const TABLES = {
   Setting: ['key', 'value', 'updated'],
   Amprah_Koreksi: ['key', 'data', 'updated', 'oleh'],
   // koreksi alokasi / mode pajak per PO dari sheet SUMMARY COST
-  PO_Koreksi: ['key', 'data', 'updated', 'oleh']
+  PO_Koreksi: ['key', 'data', 'updated', 'oleh'],
+  // item SPK mandor (dari file draft SPK); spk = 'NON' untuk daftar harga NON SPK
+  SPK: ['mandor', 'spk', 'pekerjaan', 'sheet', 'urut', 'item_id', 'desc', 'spec', 'sat', 'vol100', 'vol', 'harga', 'jumlah', 'faktor', 'file', 'updated']
 };
 /* Kolom teks: diformat "@" agar Sheets tidak mengubah "001" jadi 1, tanggal jadi Date, atau "- Beton" jadi rumus. */
 const TEXT_COLS = {
@@ -24,7 +27,7 @@ const TEXT_COLS = {
   Budget: ['id', 'g', 'sec', 'sub', 'no', 'desc', 'unit', 'rem', 'ahs'],
   AHS: ['id', 'src', 'no', 'sec', 'title', 'per', 'nama', 'sat'],
   HARSAT: ['id', 'no', 'sec', 'nama', 'sat', 'upd', 'brand', 'lok', 'vendor', 'ket', 'jenis'],
-  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'ket', 'oleh'],
+  Transaksi: ['id', 'jenis', 'kat', 'no', 'tgl', 'pihak', 'uraian', 'ket', 'oleh', 'spk'],
   Alokasi: ['tx_id', 'target', 'komponen'],
   Rincian: ['tx_id', 'h', 'nama', 'sat'],
   Paket: ['id', 'nama', 'ket'],
@@ -32,7 +35,8 @@ const TEXT_COLS = {
   Log: ['waktu', 'peran', 'aksi', 'detail'],
   Setting: ['key', 'value'],
   Amprah_Koreksi: ['key', 'data', 'oleh'],
-  PO_Koreksi: ['key', 'data', 'oleh']
+  PO_Koreksi: ['key', 'data', 'oleh'],
+  SPK: ['mandor', 'spk', 'pekerjaan', 'sheet', 'item_id', 'desc', 'spec', 'sat', 'file']
 };
 
 function ss_() {
@@ -40,10 +44,20 @@ function ss_() {
   return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
 }
 /* Tab yang ditambahkan di versi lebih baru: dibuat otomatis bila belum ada (tanpa perlu setup ulang). */
-const AUTO_TABLES = ['Setting', 'Amprah_Koreksi', 'PO_Koreksi'];
+const AUTO_TABLES = ['Setting', 'Amprah_Koreksi', 'PO_Koreksi', 'SPK'];
+const HEADER_OK_ = {};
 function sheet_(name) {
   const ss = ss_();
   let sh = ss.getSheetByName(name);
+  // tab lama dengan kolom lebih sedikit: lengkapi header kolom baru (sekali per eksekusi)
+  if (sh && !HEADER_OK_[name] && sh.getLastRow() > 0) {
+    const head = TABLES[name], cur = sh.getRange(1, 1, 1, head.length).getValues()[0];
+    if (cur.some(function (c, i) { return String(c) !== head[i]; }) && cur.slice(0, head.length).every(function (c, i) { return c === '' || String(c) === head[i]; })) {
+      sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
+      applyTextFormat_(sh, name);
+    }
+    HEADER_OK_[name] = true;
+  }
   if (!sh && AUTO_TABLES.indexOf(name) >= 0) {
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, TABLES[name].length).setValues([TABLES[name]]).setFontWeight('bold');
