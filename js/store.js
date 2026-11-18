@@ -19,6 +19,7 @@
     d.set = d.set || {};      // pengaturan: amprahSrc {id}, amprahRules [...]
     d.amOvr = d.amOvr || {};  // koreksi alokasi per baris Amprah: {key: {alok, rinc, ket}}
     d.poOvr = d.poOvr || {};  // koreksi per PO (SUMMARY COST): {key: {alok|null, tax}}
+    d.spk = d.spk || [];      // baris SPK mandor (dari file draft SPK)
     return d;
   }
 
@@ -66,6 +67,17 @@
     /** Semua transaksi untuk dihitung/ditampilkan: manual + Amprah (dibaca dari sheet, tidak disimpan). */
     allTx: function () {
       var out = this.data.tx;
+      // SPK mandor: komitmen upah; obname yang ditautkan ke SPK = pembayaran SPK (bukan komitmen baru)
+      if (window.Spk && this.data.spk.length) {
+        var g = this.spkGroups(), keys = {}, linked = {};
+        g.spks.forEach(function (sp) { keys[sp.key] = 1; });
+        out = out.map(function (t) {
+          if (!t.spk || !keys[t.spk] || t.batal) return t;
+          (linked[t.spk] = linked[t.spk] || []).push(t);
+          return Object.assign({}, t, { noCommit: true });
+        });
+        out = out.concat(Spk.toTx(g, this.rab, linked));
+      }
       if (window.Amprah) {
         var rows = Amprah.rows(this.data.set.amprahSrc);
         if (rows.length) out = out.concat(Amprah.toTx(rows, Amprah.rulesOf(this.data.set, this.rab), this.data.amOvr, this.rab));
@@ -80,6 +92,27 @@
     poSrc: function () {
       if (window.Sync && Sync.enabled()) return this.data.set.poSrc || null;
       return Po.cache && Po.cache.id === 'file' ? { id: 'file' } : null;
+    },
+    spkGroups: function () {
+      if (this._spkOf !== this.data.spk) { this._spkG = Spk.group(this.data.spk); this._spkOf = this.data.spk; }
+      return this._spkG;
+    },
+    /** Terbitkan SPK satu mandor (mengganti SPK mandor itu). Mode server langsung ke server (Admin). */
+    publishSpk: function (mandor, rows) {
+      var self = this, lower = String(mandor).toLowerCase();
+      var apply = function () {
+        self.data.spk = self.data.spk.filter(function (r) { return String(r.mandor).toLowerCase() !== lower; })
+          .concat(rows.map(function (r) { return Object.assign({}, r, { mandor: mandor }); }));
+        self.save();
+      };
+      if (window.Sync && Sync.enabled()) return Sync.api('publishSpk', { mandor: mandor, rows: rows }).then(function () { apply(); return Sync.load(); });
+      apply(); return Promise.resolve(true);
+    },
+    deleteSpk: function (mandor) {
+      var self = this, lower = String(mandor).toLowerCase();
+      var apply = function () { self.data.spk = self.data.spk.filter(function (r) { return String(r.mandor).toLowerCase() !== lower; }); self.save(); };
+      if (window.Sync && Sync.enabled()) return Sync.api('deleteSpk', { mandor: mandor }).then(function () { apply(); return Sync.load(); });
+      apply(); return Promise.resolve(true);
     },
     savePoOvr: function (key, ovr) {
       if (!this.guard()) return false;
@@ -140,6 +173,9 @@
         Object.keys(this.data.amOvr).forEach(function (k) { (self.data.amOvr[k].alok || []).forEach(remapT); self.data.amOvr[k].alok = self.data.amOvr[k].alok.filter(function (a) { return a.t; }); });
         if (Array.isArray(this.data.set.amprahRules)) this.data.set.amprahRules.forEach(remapT);
         Object.keys(this.data.poOvr).forEach(function (k) { var o = self.data.poOvr[k]; if (o.alok) { o.alok.forEach(remapT); o.alok = o.alok.filter(function (a) { return a.t; }); } });
+        // item SPK ikut dipetakan; yang hilang dilepas (harus dicocokkan ulang)
+        this.data.spk.forEach(function (r) { if (r.item_id) { var m = mapId(r.item_id); r.item_id = m || ''; } });
+        this._spkOf = null;
         if (Array.isArray(this.data.set.poRules)) this.data.set.poRules.forEach(remapT);
         this.save();
       }

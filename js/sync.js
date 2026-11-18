@@ -78,7 +78,7 @@
         if (!flushed) return false; // masih ada antrean (offline) → jangan timpa data lokal
         return self.api('load', { rabVer: force ? '' : (Store.rab ? self.vers.rabVer : '') }).then(function (d) {
           if (d.rab !== undefined) { Store.rab = d.rab; Store.saveRab(); }
-          Store.data = { tx: d.data.tx, pkgs: d.data.pkgs, set: d.data.set || {}, amOvr: d.data.amOvr || {}, poOvr: d.data.poOvr || {}, seq: (Store.data && Store.data.seq) || 1 };
+          Store.data = { tx: d.data.tx, pkgs: d.data.pkgs, set: d.data.set || {}, amOvr: d.data.amOvr || {}, poOvr: d.data.poOvr || {}, spk: d.data.spk || [], seq: (Store.data && Store.data.seq) || 1 };
           Store.save(true);
           self.vers = { rabVer: d.rabVer, dataVer: d.dataVer }; self.needLoad = false; self.saveState();
           self.lastSync = new Date();

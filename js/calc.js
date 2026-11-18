@@ -61,7 +61,7 @@
     }
 
     (data.tx || []).forEach(function (t) {
-      if (t.batal) return;
+      if (t.batal || t.noCommit) return;
       var nilai = +t.nilai || 0;
       var ratio = nilai ? Math.min(1, Math.max(0, (+t.bayar || 0) / nilai)) : 0;
       tot.txCount++;
