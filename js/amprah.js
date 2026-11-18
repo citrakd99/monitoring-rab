@@ -70,10 +70,16 @@
   }
 
   /* ---------- aturan pemetaan ---------- */
+  /* Kata kunci dicocokkan di AWAL kata (mis. "ht" tidak cocok dengan "light"). */
+  function wordStart(txt, w) {
+    var i = -1;
+    while ((i = txt.indexOf(w, i + 1)) >= 0) if (i === 0 || !/[a-z0-9]/.test(txt.charAt(i - 1))) return true;
+    return false;
+  }
   function textMatch(kata, txt) {
     kata = s(kata).toLowerCase(); if (!kata) return true;
     // "a|b" = salah satu; "a&b" = semua kata dalam satu alternatif
-    return kata.split('|').some(function (alt) { return alt.split('&').every(function (w) { w = w.trim(); return !w || txt.indexOf(w) >= 0; }); });
+    return kata.split('|').some(function (alt) { return alt.split('&').every(function (w) { w = w.trim(); return !w || wordStart(txt, w); }); });
   }
   function ruleMatch(rule, row) {
     var j = s(rule.jenis).toUpperCase();

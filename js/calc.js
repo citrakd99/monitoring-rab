@@ -41,6 +41,9 @@
     items.forEach(function (it) {
       L[it.id] = { it: it, real: 0, paid: 0, r: { mat: 0, upah: 0, lain: 0 }, tx: {} };
     });
+    // seksi RAB sebagai target alokasi (S:<kelompok>-<hash nama seksi>)
+    var SEC = {};
+    items.forEach(function (it) { var k = secKey(it.g, it.sec); (SEC[k] = SEC[k] || []).push(it.id); });
     var pkgs = {};
     (data.pkgs || []).forEach(function (p) {
       var lines = p.lines.filter(function (id) { return L[id]; });
@@ -85,6 +88,12 @@
             addLine(id, v * share, ratio, k, t.id);
           });
           alloc += v;
+        } else if (a.t.indexOf('S:') === 0) {
+          var sids = SEC[a.t];
+          if (!sids) { tot.orphan += v; return; }
+          var sb = sids.reduce(function (acc, id) { return acc + L[id].it.total; }, 0);
+          sids.forEach(function (id) { addLine(id, v * (sb > 0 ? L[id].it.total / sb : 1 / sids.length), ratio, k, t.id); });
+          alloc += v;
         } else tot.orphan += v;
       });
       var sisa = nilai - alloc;
@@ -115,7 +124,7 @@
     });
 
     var budget = items.reduce(function (a, it) { return a + it.total; }, 0);
-    return { L: L, pkgs: pkgs, groups: groups, tot: tot, budget: budget, bK: bK, rK: rK };
+    return { L: L, pkgs: pkgs, SEC: SEC, groups: groups, tot: tot, budget: budget, bK: bK, rK: rK };
   }
 
   /* ---------- Analisa harga satuan ----------
@@ -204,6 +213,10 @@
     return { total: tot, changed: changed };
   }
 
-  root.Calc = { compute: compute, status: status, KAT: KAT, KAT_ALL: KAT_ALL, KAT_BY: KAT_BY, KOMP: KOMP,
+  function hash36(str) { var h = 0x811c9dc5; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
+  /** Kunci target seksi — harus sama dengan Po.secKey. */
+  function secKey(g, sec) { return 'S:' + g + '-' + hash36(String(sec == null ? '' : sec).replace(/\s+/g, ' ').trim().toLowerCase()); }
+
+  root.Calc = { compute: compute, secKey: secKey, status: status, KAT: KAT, KAT_ALL: KAT_ALL, KAT_BY: KAT_BY, KOMP: KOMP,
     computeHarga: computeHarga, ahsActual: ahsActual, nk: nk };
 })(window);
